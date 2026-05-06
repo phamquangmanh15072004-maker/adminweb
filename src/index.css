@@ -1,0 +1,79 @@
+@import "tailwindcss";
+
+:root {
+	color-scheme: light;
+	font-synthesis: none;
+	text-rendering: optimizeLegibility;
+	-webkit-font-smoothing: antialiased;
+	-moz-osx-font-smoothing: grayscale;
+}
+
+html,
+body,
+#root {
+	height: 100%;
+}
+
+body {
+	margin: 0;
+	background:
+		radial-gradient(circle at top left, rgba(59, 130, 246, 0.10), transparent 34%),
+		radial-gradient(circle at top right, rgba(15, 23, 42, 0.05), transparent 28%),
+		#f8fafc;
+	color: #0f172a;
+}
+
+* {
+	box-sizing: border-box;
+}
+
+::selection {
+	background: rgba(37, 99, 235, 0.18);
+}
+
+.custom-scrollbar::-webkit-scrollbar {
+	width: 10px;
+	height: 10px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-track {
+	background: transparent;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+	background: rgba(148, 163, 184, 0.45);
+	border-radius: 999px;
+	border: 3px solid transparent;
+	background-clip: content-box;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+	background: rgba(100, 116, 139, 0.65);
+	border: 3px solid transparent;
+	background-clip: content-box;
+}
+
+/* Lam dep o nhap thoi gian cua DatePicker */
+.react-datepicker__input-time-container {
+	margin: 10px 0 0 0 !important;
+	padding: 10px !important;
+	background-color: #f8fafc !important;
+	border-top: 1px solid #e2e8f0 !important;
+	display: flex !important;
+	align-items: center;
+	justify-content: space-between;
+}
+
+.react-datepicker__time-input input {
+	border: 1px solid #cbd5e1 !important;
+	border-radius: 6px !important;
+	padding: 4px 8px !important;
+	outline: none !important;
+	font-weight: 600 !important;
+	color: #0f172a !important;
+}
+
+.react-datepicker__time-input input:focus {
+	border-color: #3b82f6 !important;
+	box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2) !important;
+}
