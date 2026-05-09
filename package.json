@@ -20,7 +20,7 @@
     "firebase": "^12.11.0",
     "framer-motion": "^12.38.0",
     "lottie-react": "^2.4.1",
-    "lucide-react": "^1.7.0",
+    "lucide-react": "^1.14.0",
     "papaparse": "^5.5.3",
     "react": "^19.2.4",
     "react-datepicker": "^9.1.0",

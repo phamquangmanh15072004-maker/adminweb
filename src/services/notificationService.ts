@@ -1,12 +1,34 @@
-import { collection, addDoc, doc, getDoc } from 'firebase/firestore';
+import { collection, addDoc, doc, getDoc, getDocs, query, where } from 'firebase/firestore';
 import { db } from '../firebase';
 import { toast } from 'react-hot-toast';
 
+const FCM_ENDPOINT = 'https://gunpla-backend-ht5n.onrender.com/api/send-fcm';
+
+// ============================================================================
+// Helper gọi FCM backend — dùng chung cho cả 2 hàm (Do bạn tối ưu rất tốt)
+// ============================================================================
+async function sendFcmPush(payload: {
+  targetToken: string;
+  title: string;
+  body: string;
+  type: string;
+  orderId?: string;
+  imageUrl?: string;
+  action?: string;
+  channelId?: string;
+}) {
+  const res = await fetch(FCM_ENDPOINT, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) {
+    throw new Error(`FCM push thất bại: ${res.status} ${res.statusText}`);
+  }
+}
+
 /**
- * 📬 Notification Helper Functions
- * 
- * Dùng các hàm này để tạo thông báo trong ứng dụng.
- * Ví dụ: Khi tạo đơn hàng mới, gọi `notifyNewOrder(orderId, customerName)`
+ * 📬 Notification Helper Functions (Cho Web Admin)
  */
 
 // ============================================================================
@@ -24,7 +46,6 @@ export async function notifyNewOrder(orderId: string, customerName: string) {
     toast.success('Thông báo đơn hàng mới đã gửi!', { duration: 1500 });
   } catch (error) {
     console.error('Lỗi tạo thông báo đơn hàng:', error);
-    toast.error('Lỗi gửi thông báo');
   }
 }
 
@@ -40,10 +61,8 @@ export async function notifyLowStock(productName: string, currentStock: number) 
       readBy: [],
       createdAt: Date.now(),
     });
-    toast.success('Thông báo sắp hết kho được gửi!', { duration: 1500 });
   } catch (error) {
     console.error('Lỗi tạo thông báo sắp hết kho:', error);
-    toast.error('Lỗi gửi thông báo');
   }
 }
 
@@ -103,10 +122,8 @@ export async function notifyCustomerSupport(
       readBy: [],
       createdAt: Date.now(),
     });
-    toast.success(`Thông báo ${issueTypeLabel[issueType].toLowerCase()} đã gửi!`, { duration: 1500 });
   } catch (error) {
     console.error('Lỗi tạo thông báo hỗ trợ:', error);
-    toast.error('Lỗi gửi thông báo');
   }
 }
 
@@ -128,23 +145,15 @@ export async function notifySystemAlert(title: string, message: string, severity
       readBy: [],
       createdAt: Date.now(),
     });
-
-    toast.success('Thông báo cảnh báo hệ thống được gửi!', { duration: 1500 });
   } catch (error) {
     console.error('Lỗi tạo thông báo cảnh báo:', error);
-    toast.error('Lỗi gửi thông báo');
   }
 }
 
 // ============================================================================
 // 7. THÔNG BÁO THAY ĐỔI QUYỀN HẠN
 // ============================================================================
-export async function notifyRoleChanged(
-  userName: string,
-  oldRole: string,
-  newRole: string,
-  changedByAdmin: string
-) {
+export async function notifyRoleChanged(userName: string, oldRole: string, newRole: string, changedByAdmin: string) {
   try {
     await addDoc(collection(db, 'notifications'), {
       title: `Quyền hạn ${userName} đã thay đổi`,
@@ -161,18 +170,11 @@ export async function notifyRoleChanged(
 // ============================================================================
 // 8. THÔNG BÁO KHUYẾN MÃI / SALE
 // ============================================================================
-export async function notifyPromotionStarted(
-  promotionName: string,
-  discount: number,
-  endTime: Date
-) {
+export async function notifyPromotionStarted(promotionName: string, discount: number, endTime: Date) {
   try {
     await addDoc(collection(db, 'notifications'), {
       title: `Khuyến mãi ${promotionName} đã bắt đầu`,
-      message: `Giảm giá đến ${discount}%. Kết thúc vào ${endTime.toLocaleDateString('vi-VN', {
-        hour: '2-digit',
-        minute: '2-digit',
-      })}`,
+      message: `Giảm giá đến ${discount}%. Kết thúc vào ${endTime.toLocaleDateString('vi-VN', { hour: '2-digit', minute: '2-digit' })}`,
       targetRoles: ['ADMIN', 'INVENTORY', 'STAFF'],
       readBy: [],
       createdAt: Date.now(),
@@ -185,11 +187,7 @@ export async function notifyPromotionStarted(
 // ============================================================================
 // 9. THÔNG BÁO ĐÁNH GIÁ SẢN PHẨM MỚI
 // ============================================================================
-export async function notifyNewReview(
-  productName: string,
-  customerName: string,
-  rating: number
-) {
+export async function notifyNewReview(productName: string, customerName: string, rating: number) {
   try {
     await addDoc(collection(db, 'notifications'), {
       title: `Đánh giá mới cho ${productName}`,
@@ -206,11 +204,7 @@ export async function notifyNewReview(
 // ============================================================================
 // 10. THÔNG BÁO CHUNG (Custom)
 // ============================================================================
-export async function createCustomNotification(
-  title: string,
-  message: string,
-  targetRoles: string[] = ['ADMIN']
-) {
+export async function createCustomNotification(title: string, message: string, targetRoles: string[] = ['ADMIN']) {
   try {
     await addDoc(collection(db, 'notifications'), {
       title,
@@ -225,92 +219,119 @@ export async function createCustomNotification(
     toast.error('Lỗi gửi thông báo');
   }
 }
+
 // ============================================================================
-// 11. THÔNG BÁO CHO KHÁCH HÀNG (HIỂN THỊ TRÊN APP ANDROID)
+// 11. GỬI THÔNG BÁO CHO USER APP (Firestore sub-collection + FCM push)
 // ============================================================================
 export async function sendNotificationToAppUser(
   userId: string,
   title: string,
   body: string,
-  type: 'ORDER_UPDATE' | 'PROMO' | 'SYSTEM',
+  type: string = 'ORDER',
   orderId?: string,
   imageUrl?: string,
   action?: string
 ) {
+  const defaultAction = orderId ? 'VIEW_ORDER' : 'VIEW_HOME';
+  const resolvedAction = action || defaultAction;
+
   try {
-    // Trỏ thẳng vào sub-collection của user đó
-    const userNotifRef = collection(db, 'users', userId, 'notifications');
-    
-    await addDoc(userNotifRef, {
-      userId: userId,
-      title: title,
-      body: body,
-      type: type,
-      orderId: orderId || null,
-      imageUrl: imageUrl || null,
-      action: action || (orderId ? 'VIEW_ORDER' : 'VIEW_HOME'),
-      isRead: false, // App Android dùng isRead (chuẩn model của bạn)
-      timestamp: Date.now()
+    // 1. Lưu vào Firestore sub-collection trước
+    await addDoc(collection(db, 'users', userId, 'notifications'), {
+      userId,
+      title,
+      body,
+      type,
+      orderId: orderId ?? null,
+      imageUrl: imageUrl ?? null,
+      action: resolvedAction,
+      isRead: false,
+      timestamp: Date.now(),
+    });
+  } catch (error) {
+    console.error('Lỗi lưu thông báo Firestore:', error);
+    return;
+  }
+
+  // 2. Lấy FCM token và bắn push — lỗi FCM không ảnh hưởng Firestore đã lưu
+  try {
+    const userSnap = await getDoc(doc(db, 'users', userId));
+    if (!userSnap.exists()) return;
+
+    const fcmToken = (userSnap.data()?.fcmToken as string | undefined)?.trim();
+    if (!fcmToken) return;
+
+    await sendFcmPush({
+      targetToken: fcmToken,
+      title,
+      body,
+      type,
+      orderId,
+      imageUrl,
+      action: resolvedAction,
     });
 
-    try {
-      const userDocSnap = await getDoc(doc(db, 'users', userId));
-      if (userDocSnap.exists()) {
-        const userData = userDocSnap.data() as { fcmToken?: string };
-        const fcmToken = String(userData?.fcmToken || '').trim();
-
-        if (fcmToken) {
-          await fetch('https://gunpla-backend-ht5n.onrender.com/api/send-fcm', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-              targetToken: fcmToken,
-              title,
-              body,
-              type,
-              orderId,
-            }),
-          });
-        }
-      }
-    } catch (pushError) {
-      console.error('Lỗi gửi push notification qua backend:', pushError);
-    }
-
     console.log(`Đã gửi thông báo cho User: ${userId}`);
-  } catch (error) {
-    console.error('Lỗi khi bắn thông báo cho User App:', error);
+  } catch (pushError) {
+    console.error('Lỗi gửi FCM push:', pushError);
   }
 }
+
 // ============================================================================
-// EXAMPLE USAGE (Dùng trong component)
+// 12. THÔNG BÁO TIN NHẮN CHAT MỚI
 // ============================================================================
+export async function sendChatNotification(
+  senderName: string,
+  receiverId: string,
+  messageContent: string,
+  channelId: string
+) {
+  try {
+    const targetTokens: string[] = [];
 
-/*
-import {
-  notifyNewOrder,
-  notifyLowStock,
-  notifyPaymentSuccess,
-  createCustomNotification,
-} from '../services/notificationService.ts';
+    // 1. Lấy FCM token(s) của người nhận
+    if (receiverId === 'ADMIN') {
+      const adminSnap = await getDocs(
+        query(collection(db, 'users'), where('role', '==', 'ADMIN'))
+      );
+      adminSnap.forEach(d => {
+        const token = (d.data().fcmToken as string | undefined)?.trim();
+        if (token) targetTokens.push(token);
+      });
+    } else {
+      const userSnap = await getDoc(doc(db, 'users', receiverId));
+      if (userSnap.exists()) {
+        const token = (userSnap.data()?.fcmToken as string | undefined)?.trim();
+        if (token) targetTokens.push(token);
+      }
+    }
 
-// Trong useEffect hoặc event handler:
+    if (targetTokens.length === 0) {
+      console.warn(`Không tìm thấy FCM token cho: ${receiverId}`);
+      return;
+    }
 
-(1) Thông báo đơn hàng mới:
-await notifyNewOrder('A2031', 'Nguyễn Văn A');
+    const shortMessage =
+      messageContent.length > 100
+        ? messageContent.substring(0, 97) + '...'
+        : messageContent;
 
-(2) Thông báo sắp hết kho:
-await notifyLowStock('RG Strike Freedom', 3);
+    // 2. Bắn FCM song song cho tất cả token
+    await Promise.all(
+      targetTokens.map(token =>
+        sendFcmPush({
+          targetToken: token,
+          title: `Tin nhắn mới từ ${senderName}`,
+          body: shortMessage,
+          type: 'CHAT_MESSAGE',
+          action: 'VIEW_CHAT',
+          channelId,
+        })
+      )
+    );
 
-(3) Thông báo thanh toán:
-await notifyPaymentSuccess('A2031', 5990000);
-
-(4) Thông báo chung:
-await createCustomNotification(
-  'Bảo trì hệ thống',
-  'Hệ thống sẽ bảo trì vào 22h hôm nay.',
-  ['ADMIN', 'INVENTORY', 'STAFF']
-);
-*/
+    console.log(`Đã gửi thông báo Chat đến: ${receiverId}`);
+  } catch (error) {
+    console.error('Lỗi khi bắn thông báo Chat:', error);
+  }
+}

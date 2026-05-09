@@ -96,14 +96,13 @@ interface UserRecord {
   isLocked?: boolean;
   lockReason?: string;
   lockedAt?: string;
-  lastActive?: string | number; // Support both format from Web and App
+  lastActive?: string | number;
   createdAt?: string;
 }
 
 type SortField = 'name' | 'email' | 'lastActive';
 type SortOrder = 'asc' | 'desc';
 type FilterRole = 'ALL' | 'USER' | 'ADMIN' | 'INVENTORY' | 'STAFF';
-// Nâng cấp: Tách bạch rõ ràng logic Locked/Active và Online
 type FilterStatus = 'ALL' | 'ACCOUNT_ACTIVE' | 'ACCOUNT_LOCKED' | 'ONLINE_NOW';
 
 const ROLE_OPTIONS: Array<UserRecord['role']> = ['ADMIN', 'INVENTORY', 'STAFF', 'USER'];
@@ -130,7 +129,7 @@ const getRoleSoftClass = (role: UserRecord['role']) => {
 };
 
 // ============================================================================
-// 🎭 DIALOG COMPONENTS (Giữ nguyên của em)
+// 🎭 DIALOG COMPONENTS
 // ============================================================================
 interface ChangeRoleDialogProps { user: UserRecord; newTargetRole: UserRecord['role']; isSubmitting: boolean; onConfirm: () => void; onCancel: () => void; }
 function ChangeRoleDialog({ user, newTargetRole, isSubmitting, onConfirm, onCancel }: ChangeRoleDialogProps) {
@@ -228,18 +227,19 @@ export default function UsersPage() {
   const [dialogType, setDialogType] = useState<'lock' | 'unlock' | 'changeRole' | null>(null);
   const [lockReason, setLockReason] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [hoveredUserId, setHoveredUserId] = useState<string | null>(null);
+  
+  // Các state quản lý Floating Menu
   const [roleMenuOpenUserId, setRoleMenuOpenUserId] = useState<string | null>(null);
   const [roleMenuPosition, setRoleMenuPosition] = useState<{ left: number; top: number; openUp: boolean } | null>(null);
   const [newTargetRole, setNewTargetRole] = useState<UserRecord['role'] | null>(null);
+  
+  // State quản lý Filter Dropdowns
   const [isRoleFilterOpen, setIsRoleFilterOpen] = useState(false);
   const [isStatusFilterOpen, setIsStatusFilterOpen] = useState(false);
   const roleFilterRef = useRef<HTMLDivElement | null>(null);
   const statusFilterRef = useRef<HTMLDivElement | null>(null);
 
   const roleFilterLabel = filterRole === 'ALL' ? 'Tất cả Vai trò' : filterRole;
-
-  // 🌟 Logic hiển thị Tên của nút Lọc Trạng thái
   const statusFilterLabel =
     filterStatus === 'ALL' ? 'Tất cả Trạng thái' :
       filterStatus === 'ACCOUNT_ACTIVE' ? 'TK Bình thường' :
@@ -326,38 +326,31 @@ export default function UsersPage() {
     return unsubscribe;
   }, []);
 
-  // 🔎 🌟 BỘ LỌC VÀ SẮP XẾP ĐÃ ĐƯỢC NÂNG CẤP
+  // 🔎 🌟 BỘ LỌC VÀ SẮP XẾP
   const filteredUsers = users
     .filter((user) => {
-      // Lọc theo text search
       if (searchTerm) {
         const term = searchTerm.toLowerCase();
         if (!user.name.toLowerCase().includes(term) && !user.email.toLowerCase().includes(term) && !(user.phone?.toLowerCase().includes(term))) {
           return false;
         }
       }
-
-      // Lọc theo Role
       if (filterRole !== 'ALL' && user.role !== filterRole) return false;
-
-      // 🌟 Lọc theo Status (Bao gồm cả tính năng đang Online)
       if (filterStatus !== 'ALL') {
         if (filterStatus === 'ACCOUNT_LOCKED' && !user.isLocked) return false;
         if (filterStatus === 'ACCOUNT_ACTIVE' && user.isLocked) return false;
         if (filterStatus === 'ONLINE_NOW') {
           const timeValue = typeof user.lastActive === 'string' ? Number(user.lastActive) : (user.lastActive || 0);
-          const isOnline = (Date.now() - timeValue) < 300000; // Nhỏ hơn 5 phút (300.000 ms)
+          const isOnline = (Date.now() - timeValue) < 300000;
           if (!isOnline) return false;
         }
       }
       return true;
     })
     .sort((a, b) => {
-      // 🌟 LUẬT ƯU TIÊN SỐ 1: LUÔN GHIM ADMIN LÊN ĐẦU
       if (a.role === 'ADMIN' && b.role !== 'ADMIN') return -1;
       if (a.role !== 'ADMIN' && b.role === 'ADMIN') return 1;
 
-      // 🌟 LUẬT SỐ 2: Sắp xếp theo thao tác của người dùng
       let aVal, bVal;
       if (sortField === 'name') {
         aVal = a.name.toLowerCase();
@@ -450,7 +443,6 @@ export default function UsersPage() {
             />
           </div>
 
-          {/* Bộ lọc Role */}
           <div ref={roleFilterRef} className="relative">
             <button onClick={() => { setIsRoleFilterOpen(!isRoleFilterOpen); setIsStatusFilterOpen(false); }} className="w-full px-4 py-2.5 border border-slate-300 rounded-xl bg-slate-50 hover:bg-white font-semibold text-slate-700 text-sm inline-flex items-center justify-between transition">
               <span className="truncate">{roleFilterLabel}</span>
@@ -471,7 +463,6 @@ export default function UsersPage() {
             )}
           </div>
 
-          {/* 🌟 Bộ lọc Trạng thái (Đã nâng cấp) */}
           <div ref={statusFilterRef} className="relative">
             <button onClick={() => { setIsStatusFilterOpen(!isStatusFilterOpen); setIsRoleFilterOpen(false); }} className="w-full px-4 py-2.5 border border-slate-300 rounded-xl bg-slate-50 hover:bg-white font-semibold text-slate-700 text-sm inline-flex items-center justify-between transition">
               <span className="truncate">{statusFilterLabel}</span>
@@ -483,7 +474,7 @@ export default function UsersPage() {
                   { value: 'ALL', label: 'Tất cả Trạng thái' },
                   { value: 'ACCOUNT_ACTIVE', label: 'TK Bình thường' },
                   { value: 'ACCOUNT_LOCKED', label: 'TK Đã khóa' },
-                  { value: 'ONLINE_NOW', label: 'Đang Online 🟢' }, // Lựa chọn mới
+                  { value: 'ONLINE_NOW', label: 'Đang Online 🟢' },
                 ] as Array<{ value: FilterStatus; label: string }>).map((statusOption) => (
                   <button
                     key={statusOption.value}
@@ -516,7 +507,7 @@ export default function UsersPage() {
             </thead>
             <tbody className="divide-y divide-slate-200">
               {filteredUsers.map((user) => (
-                <tr key={user.id} className="hover:bg-slate-50 transition duration-150" onMouseEnter={() => setHoveredUserId(user.id)} onMouseLeave={() => setHoveredUserId(null)}>
+                <tr key={user.id} className="hover:bg-slate-50 transition duration-150">
                   <td className="px-6 py-4">
                     <div className="flex items-center gap-3">
                       {user.avatarUrl ? (
@@ -534,7 +525,6 @@ export default function UsersPage() {
                   <td className="px-6 py-4">{getRoleBadge(user.role)}</td>
                   <td className="px-6 py-4">{getStatusBadge(user.isLocked)}</td>
 
-                  {/* 🌟 Hiển thị thời gian/trạng thái bằng component formatRelativeTime */}
                   <td className="px-6 py-4 text-sm font-medium">
                     {formatRelativeTime(user.lastActive)}
                   </td>
@@ -546,27 +536,42 @@ export default function UsersPage() {
                         const canChat = Boolean(currentUser) && user.role !== 'ADMIN' && user.id !== currentUser?.uid && user.email !== currentUser?.email;
                         return (
                           <div className="relative inline-block">
-                            <button onClick={() => canChat && navigate(`/chat?userId=${user.id}`)} disabled={!canChat} className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-lg transition-all ${canChat ? 'bg-sky-100 text-sky-700 hover:bg-sky-200' : 'bg-slate-100 text-slate-400 cursor-not-allowed opacity-60'}`}>
+                            <button 
+                              onClick={() => canChat && navigate(`/chat?userId=${user.id}`)} 
+                              disabled={!canChat} 
+                              className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-lg transition-all ${canChat ? 'bg-sky-100 text-sky-700 hover:bg-sky-200' : 'bg-slate-100 text-slate-400 cursor-not-allowed opacity-60'}`}
+                              title={canChat ? 'Nhắn tin' : 'Không khả dụng'}
+                            >
                               <MessageCircle size={14} /> Chat
                             </button>
                           </div>
                         );
                       })()}
                       <div className="relative inline-block" data-role-menu-root="true">
-                        <button onClick={(event) => {
-                          if (!isSuperAdmin) return;
-                          if (roleMenuOpenUserId === user.id) { setRoleMenuOpenUserId(null); setRoleMenuPosition(null); return; }
-                          const rect = event.currentTarget.getBoundingClientRect();
-                          const openUp = window.innerHeight - rect.bottom < 220;
-                          setRoleMenuOpenUserId(user.id);
-                          setRoleMenuPosition({ left: Math.max(12, Math.min(rect.right - 228, window.innerWidth - 228 - 12)), top: openUp ? rect.top - 8 : rect.bottom + 8, openUp });
-                        }} disabled={!isSuperAdmin} className={`inline-flex items-center justify-between gap-2 w-[140px] px-3 py-1.5 text-xs font-bold rounded-lg border transition ${isSuperAdmin ? `${getRoleSoftClass(user.role)} hover:brightness-[0.98] cursor-pointer` : 'bg-amber-50 text-amber-500 border-amber-200 opacity-50 cursor-not-allowed'}`}>
+                        <button 
+                          onClick={(event) => {
+                            if (!isSuperAdmin) return;
+                            if (roleMenuOpenUserId === user.id) { setRoleMenuOpenUserId(null); setRoleMenuPosition(null); return; }
+                            const rect = event.currentTarget.getBoundingClientRect();
+                            const openUp = window.innerHeight - rect.bottom < 220;
+                            setRoleMenuOpenUserId(user.id);
+                            setRoleMenuPosition({ left: Math.max(12, Math.min(rect.right - 228, window.innerWidth - 228 - 12)), top: openUp ? rect.top - 8 : rect.bottom + 8, openUp });
+                          }} 
+                          disabled={!isSuperAdmin} 
+                          className={`inline-flex items-center justify-between gap-2 w-[140px] px-3 py-1.5 text-xs font-bold rounded-lg border transition ${isSuperAdmin ? `${getRoleSoftClass(user.role)} hover:brightness-[0.98] cursor-pointer` : 'bg-amber-50 text-amber-500 border-amber-200 opacity-50 cursor-not-allowed'}`}
+                          title={isSuperAdmin ? 'Đổi quyền' : 'Chỉ Super Admin mới có quyền'}
+                        >
                           <span className="inline-flex items-center justify-center min-w-[94px] tracking-wide">{user.role}</span>
                           <ChevronDown size={14} className={`transition-transform ${roleMenuOpenUserId === user.id ? 'rotate-180' : ''}`} />
                         </button>
                       </div>
                       <div className="relative inline-block">
-                        <button onClick={() => handleOpenDialog(user, user.isLocked ? 'unlock' : 'lock')} disabled={!isSuperAdmin} className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-lg transition ${isSuperAdmin ? (user.isLocked ? 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200 cursor-pointer' : 'bg-red-100 text-red-700 hover:bg-red-200 cursor-pointer') : ('opacity-50 cursor-not-allowed ' + (user.isLocked ? 'bg-emerald-50 text-emerald-500' : 'bg-red-50 text-red-500'))}`}>
+                        <button 
+                          onClick={() => handleOpenDialog(user, user.isLocked ? 'unlock' : 'lock')} 
+                          disabled={!isSuperAdmin} 
+                          className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-lg transition ${isSuperAdmin ? (user.isLocked ? 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200 cursor-pointer' : 'bg-red-100 text-red-700 hover:bg-red-200 cursor-pointer') : ('opacity-50 cursor-not-allowed ' + (user.isLocked ? 'bg-emerald-50 text-emerald-500' : 'bg-red-50 text-red-500'))}`}
+                          title={isSuperAdmin ? (user.isLocked ? 'Mở khóa' : 'Khóa') : 'Chỉ Super Admin mới có quyền'}
+                        >
                           {user.isLocked ? (<><Unlock size={14} /> Unlock</>) : (<><Lock size={14} /> Lock</>)}
                         </button>
                       </div>
@@ -592,7 +597,6 @@ export default function UsersPage() {
         )}
       </div>
 
-      {/* Floating Menu Dialog */}
       {isSuperAdmin && roleMenuOpenUserId && roleMenuPosition && (
         <div data-role-floating-menu="true" className="fixed z-40 w-[228px] bg-white border border-slate-200 rounded-xl shadow-lg py-1.5 animate-in fade-in zoom-in-95 duration-150" style={{ left: roleMenuPosition.left, top: roleMenuPosition.top, transform: roleMenuPosition.openUp ? 'translateY(-100%)' : 'translateY(0)' }}>
           {(() => {
@@ -611,7 +615,6 @@ export default function UsersPage() {
         </div>
       )}
 
-      {/* Hành động Dialogs */}
       {dialogType === 'changeRole' && selectedUser && newTargetRole && <ChangeRoleDialog user={selectedUser} newTargetRole={newTargetRole} isSubmitting={isSubmitting} onConfirm={handleConfirmAction} onCancel={() => { setDialogType(null); setSelectedUser(null); setNewTargetRole(null); }} />}
       {dialogType === 'lock' && selectedUser && <LockUserDialog user={selectedUser} lockReason={lockReason} isSubmitting={isSubmitting} onReasonChange={setLockReason} onConfirm={handleConfirmAction} onCancel={() => { setDialogType(null); setSelectedUser(null); setNewTargetRole(null); }} />}
       {dialogType === 'unlock' && selectedUser && <UnlockUserDialog user={selectedUser} isSubmitting={isSubmitting} onConfirm={handleConfirmAction} onCancel={() => { setDialogType(null); setSelectedUser(null); setNewTargetRole(null); }} />}

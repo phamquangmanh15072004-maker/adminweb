@@ -23,6 +23,7 @@ import {
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { auth, db } from '../../firebase';
+import { sendNotificationToAppUser } from '../../services/notificationService';
 
 // 🌟 1. THÊM UNREADCOUNTS VÀO TYPE
 type ChatChannel = {
@@ -482,9 +483,11 @@ export default function ChatPage() {
       toast.error('Phiên đăng nhập không hợp lệ. Vui lòng đăng nhập lại.');
       return;
     }
-
     const senderId = currentUser.uid;
-    const senderName = currentUser.displayName || currentUser.email || 'Admin';
+    const isInternalStaff = true; 
+    const senderName = isInternalStaff 
+        ? 'Chăm Sóc Khách Hàng'                          
+        : (currentUser.displayName || currentUser.email || 'Khách');
 
     const text = messageInput.trim();
     const hasText = text.length > 0;
@@ -537,6 +540,18 @@ export default function ChatPage() {
       }
 
       await updateDoc(channelRef, updateData);
+
+      if (customerId) {
+        sendNotificationToAppUser(
+          customerId,
+          `Tin nhắn mới từ ${senderName}`,
+          hasText ? text : '🖼️ Đã gửi một hình ảnh',
+          'CHAT_MESSAGE',
+          selectedChannel.id,
+          hasImage ? pendingImageUrl : undefined,
+          'VIEW_CHAT' 
+        ).catch(err => console.error("Lỗi bắn Push Chat:", err));
+      }
 
       setMessageInput('');
       setPendingImageUrl('');
