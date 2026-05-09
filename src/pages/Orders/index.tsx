@@ -25,16 +25,14 @@ import {
   LayoutList,
   KanbanSquare,
   AlertTriangle,
-  MessageSquare
 } from 'lucide-react';
 import { collection, doc, getDocs, limit, onSnapshot, orderBy, query, setDoc, updateDoc, where, increment, writeBatch } from 'firebase/firestore';
 import toast from 'react-hot-toast';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { db } from '../../firebase';
 import { sendNotificationToAppUser } from '../../services/notificationService';
-
+import { MessageSquare, /* các icon khác giữ nguyên */ } from 'lucide-react';
 type OrderStatus =
-  | 'AWAITING_PAYMENT'
   | 'PENDING'
   | 'CONFIRMED'
   | 'SHIPPING'
@@ -136,10 +134,8 @@ const PAGE_SIZE_STORAGE_KEY = 'orders_page_size';
 const CANCEL_REASONS = ['Hết hàng / Lỗi kho', 'Nghi ngờ gian lận', 'Khách yêu cầu hủy', 'Lý do khác'] as const;
 const OTHER_CANCEL_REASON = 'Lý do khác';
 
-// 🌟 THÊM AWAITING_PAYMENT VÀO OPTIONS
 const STATUS_OPTIONS: Array<{ value: OrderStatus | 'ALL'; label: string }> = [
   { value: 'ALL', label: 'Tất cả' },
-  { value: 'AWAITING_PAYMENT', label: 'Chờ thanh toán QR' },
   { value: 'PENDING', label: 'Chờ duyệt' },
   { value: 'CONFIRMED', label: 'Chờ lấy hàng' },
   { value: 'SHIPPING', label: 'Đang giao' },
@@ -154,7 +150,6 @@ const STATUS_OPTIONS: Array<{ value: OrderStatus | 'ALL'; label: string }> = [
 ];
 
 const KANBAN_COLUMNS: Array<{ status: OrderStatus; label: string }> = [
-  { status: 'AWAITING_PAYMENT', label: 'Chờ TT QR' },
   { status: 'PENDING', label: 'Chờ duyệt' },
   { status: 'CONFIRMED', label: 'Chờ lấy hàng' },
   { status: 'SHIPPING', label: 'Đang giao' },
@@ -168,9 +163,21 @@ const KANBAN_COLUMNS: Array<{ status: OrderStatus; label: string }> = [
 
 const toStatus = (value?: string): OrderStatus => {
   const status = String(value || '').toUpperCase();
-  if (status === 'REFUND_PENDING') return 'REFUNDING';
   if (
-    status === 'AWAITING_PAYMENT' ||
+    !status || 
+    status === 'NEW' || 
+    status === 'PAID' || 
+    status === 'SUCCESS' || 
+    status === 'PROCESSING' ||
+    status === 'AWAITING_PAYMENT'
+  ) {
+    return 'PENDING';
+  }
+
+  if (status === 'REFUND_PENDING') {
+    return 'REFUNDING';
+  }
+  if (
     status === 'PENDING' ||
     status === 'CONFIRMED' ||
     status === 'SHIPPING' ||
@@ -185,9 +192,9 @@ const toStatus = (value?: string): OrderStatus => {
   ) {
     return status as OrderStatus;
   }
+
   return 'UNKNOWN';
 };
-
 const toPaymentStatus = (value?: string): PaymentStatus => {
   const status = String(value || '').toUpperCase();
   return status === 'PAID' ? 'PAID' : 'UNPAID';
@@ -205,17 +212,26 @@ const getName = (order: OrderRecord) => order.receiverName || order.customerName
 const getPhone = (order: OrderRecord) => order.receiverPhone || order.phone || order.phoneNumber || 'Chưa cập nhật SĐT';
 const getAddress = (order: OrderRecord) => order.address || order.shippingAddress || 'Chưa cập nhật địa chỉ';
 const getItems = (order: OrderRecord): OrderItem[] =>
-  order.items || order.cartItems || order.products || order.orderItems || order.orderDetails || order.itemsList || order.productsList || [];
+  order.items ||
+  order.cartItems ||
+  order.products ||
+  order.orderItems ||
+  order.orderDetails ||
+  order.itemsList ||
+  order.productsList ||
+  [];
 const getTotal = (order: OrderRecord) => Number(order.totalAmount || order.totalPrice || 0);
 const getSubTotal = (order: OrderRecord) => Number(order.subTotal || order.totalAmount || order.totalPrice || 0);
-const getDiscountAmount = (order: OrderRecord) => Number(order.voucherDiscount || order.discountAmount || order.discountValue || order.shippingDiscount || 0);
+const getDiscountAmount = (order: OrderRecord) =>
+  Number(order.voucherDiscount || order.discountAmount || order.discountValue || order.shippingDiscount || 0);
 const getShippingFee = (order: OrderRecord) => Number(order.shippingFeeAfterDiscount ?? order.shippingFee ?? 0);
 const isFreeShip = (order: OrderRecord) => Boolean(order.freeshipCode || order.freeShip || order.isFreeShip);
 const getVoucherLabel = (order: OrderRecord) => order.voucherCode || order.voucherName || 'Không áp dụng';
 const getItemName = (item: OrderItem) => item.product?.name || item.name || item.productName || 'Sản phẩm';
 const getItemImage = (item: OrderItem) => item.product?.imageUrl || item.imageUrl;
 const getItemCategory = (item: OrderItem) => item.product?.category || item.category;
-const getItemPurchasedPrice = (item: OrderItem) => Number(item.purchasedPrice ?? item.price ?? item.unitPrice ?? item.product?.price ?? 0);
+const getItemPurchasedPrice = (item: OrderItem) =>
+  Number(item.purchasedPrice ?? item.price ?? item.unitPrice ?? item.product?.price ?? 0);
 const formatMoney = (value: number) => `${new Intl.NumberFormat('vi-VN').format(value)}đ`;
 const formatTime = (timestamp: any) => {
   if (!timestamp) return 'Không rõ thời gian';
@@ -231,11 +247,8 @@ export default function OrdersPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [searchInput, setSearchInput] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
-  
-  const defaultTab = (searchParams.get('tab') as OrderStatus | 'ALL') || 'ALL';
-  const [statusFilter, setStatusFilter] = useState<OrderStatus | 'ALL'>(defaultTab);
+  const [statusFilter, setStatusFilter] = useState<OrderStatus | 'ALL'>('ALL');
   const [viewMode, setViewMode] = useState<ViewMode>('LIST');
-  
   const [isProcessingId, setIsProcessingId] = useState<string | null>(null);
   const [selectedOrder, setSelectedOrder] = useState<OrderRecord | null>(null);
   const [cancelDialog, setCancelDialog] = useState<CancelDialogState | null>(null);
@@ -253,13 +266,6 @@ export default function OrdersPage() {
   const [goToPageInput, setGoToPageInput] = useState('1');
   const refundIdFromUrl = searchParams.get('refundId');
   const searchFromUrl = searchParams.get('search');
-
-  // 🌟 HÀM FIX LỖI: Đã khôi phục hàm handleTabChange
-  const handleTabChange = (tabId: OrderStatus | 'ALL') => {
-    setStatusFilter(tabId);
-    setSearchParams({ tab: tabId });
-    setCurrentPage(1);
-  };
 
   useEffect(() => {
     document.title = "Quản lý Đơn hàng - Gunpla Store";
@@ -287,7 +293,9 @@ export default function OrdersPage() {
 
   useEffect(() => {
     return () => {
-      if (refundReceiptPreview) URL.revokeObjectURL(refundReceiptPreview);
+      if (refundReceiptPreview) {
+        URL.revokeObjectURL(refundReceiptPreview);
+      }
     };
   }, [refundReceiptPreview]);
 
@@ -301,37 +309,38 @@ export default function OrdersPage() {
       setOrders(data);
       setIsLoading(false);
     });
+
     return () => unsubscribe();
   }, []);
 
   const stats = useMemo(() => {
-    const awaitingPayment = orders.filter((o) => toStatus(o.status) === 'AWAITING_PAYMENT').length;
     const pending = orders.filter((o) => toStatus(o.status) === 'PENDING').length;
     const shipping = orders.filter((o) => toStatus(o.status) === 'SHIPPING').length;
     const revenue = orders.filter((o) => toStatus(o.status) === 'COMPLETED').reduce((sum, o) => sum + getTotal(o), 0);
-    return { awaitingPayment, pending, shipping, revenue };
+    return { pending, shipping, revenue };
   }, [orders]);
 
   const statusCounts = useMemo(() => {
     const counts: Record<string, number> = {
       ALL: orders.length,
-      AWAITING_PAYMENT: 0,
       PENDING: 0,
       CONFIRMED: 0,
       SHIPPING: 0,
       COMPLETED: 0,
       RETURN_PENDING: 0,
-      RETURN_APPROVED: 0,
-      RETURNING: 0,
       RETURN_REJECTED: 0,
       CANCELLED: 0,
       REFUNDING: 0,
       REFUNDED: 0,
     };
+
     orders.forEach((order) => {
       const status = toStatus(order.status);
-      if (counts[status] !== undefined) counts[status] += 1;
+      if (counts[status] !== undefined) {
+        counts[status] += 1;
+      }
     });
+
     return counts;
   }, [orders]);
 
@@ -347,18 +356,28 @@ export default function OrdersPage() {
   }, [orders, searchTerm, statusFilter]);
 
   useEffect(() => {
-    const timer = setTimeout(() => setSearchTerm(searchInput), 250);
+    const timer = setTimeout(() => {
+      setSearchTerm(searchInput);
+    }, 250);
+
     return () => clearTimeout(timer);
   }, [searchInput]);
 
-  useEffect(() => { setCurrentPage(1); }, [searchTerm, statusFilter, pageSize]);
-  useEffect(() => { window.localStorage.setItem(PAGE_SIZE_STORAGE_KEY, String(pageSize)); }, [pageSize]);
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm, statusFilter, pageSize]);
+
+  useEffect(() => {
+    window.localStorage.setItem(PAGE_SIZE_STORAGE_KEY, String(pageSize));
+  }, [pageSize]);
 
   useEffect(() => {
     if (isLoading || !refundIdFromUrl || refundDialog) return;
     const orderFromUrl = orders.find((order) => order.id === refundIdFromUrl);
     if (!orderFromUrl) return;
+
     openRefundDialog(orderFromUrl);
+
     const nextParams = new URLSearchParams(searchParams);
     nextParams.delete('refundId');
     setSearchParams(nextParams, { replace: true });
@@ -371,7 +390,9 @@ export default function OrdersPage() {
     return filteredOrders.slice(start, start + pageSize);
   }, [filteredOrders, safePage, pageSize]);
 
-  useEffect(() => { setGoToPageInput(String(safePage)); }, [safePage]);
+  useEffect(() => {
+    setGoToPageInput(String(safePage));
+  }, [safePage]);
 
   const visibleColumns = useMemo(() => {
     if (statusFilter === 'ALL') return KANBAN_COLUMNS;
@@ -380,7 +401,6 @@ export default function OrdersPage() {
 
   const kanbanData = useMemo(() => {
     const grouped: Record<OrderStatus, OrderRecord[]> = {
-      AWAITING_PAYMENT: [],
       PENDING: [],
       CONFIRMED: [],
       SHIPPING: [],
@@ -394,14 +414,15 @@ export default function OrdersPage() {
       REFUNDED: [],
       UNKNOWN: [],
     };
-    pageOrders.forEach((order) => { grouped[toStatus(order.status)].push(order); });
+
+    pageOrders.forEach((order) => {
+      grouped[toStatus(order.status)].push(order);
+    });
+
     return grouped;
   }, [pageOrders]);
-
   const getStatusBadge = (status: OrderStatus) => {
     switch (status) {
-      case 'AWAITING_PAYMENT':
-        return <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-rose-50 text-rose-600 text-xs font-bold border border-rose-200"><QrCode className="w-3.5 h-3.5" /> Chờ TT QR</span>;
       case 'PENDING':
         return <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-amber-50 text-amber-600 text-xs font-bold border border-amber-200"><Clock className="w-3.5 h-3.5" /> Chờ duyệt</span>;
       case 'CONFIRMED':
@@ -434,11 +455,13 @@ export default function OrdersPage() {
     const paymentStatus = toPaymentStatus(order.paymentStatus);
 
     if (method === 'COD') {
-      return <span className="inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-bold bg-sky-100 text-sky-700 border border-sky-200">COD - Thanh toán khi nhận</span>;
+      return <span className="inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-bold bg-sky-100 text-sky-700 border border-sky-200">COD - Thanh toán khi nhận hàng</span>;
     }
+
     if (paymentStatus === 'PAID') {
       return <span className="inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-bold bg-emerald-100 text-emerald-700 border border-emerald-200">Đã thanh toán Online</span>;
     }
+
     return <span className="inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-bold bg-slate-100 text-slate-700 border border-slate-200">Thanh toán Online chưa hoàn tất</span>;
   };
 
@@ -496,16 +519,48 @@ export default function OrdersPage() {
       });
 
       if (order.userId) {
+        if (newStatus === 'CONFIRMED') {
+          await sendNotificationToAppUser(
+            order.userId,
+            'Đơn hàng đã được duyệt ✅',
+            `Đơn hàng #${order.id.slice(-6).toUpperCase()} của bạn đã được xác nhận và đang chờ lấy hàng.`,
+            'ORDER_UPDATE',
+            order.id
+          );
+        }
         if (newStatus === 'SHIPPING') {
-          await sendNotificationToAppUser(order.userId, 'Đơn hàng đang vận chuyển 🚚', `Đơn hàng #${order.id.slice(-6).toUpperCase()} đang trên đường giao đến bạn.`, 'ORDER_UPDATE', order.id);
+          await sendNotificationToAppUser(
+            order.userId,
+            'Đơn hàng đang được vận chuyển 🚚',
+            `Đơn hàng #${order.id.slice(-6).toUpperCase()} đang trên đường giao đến bạn.`,
+            'ORDER_UPDATE',
+            order.id
+          );
         }
+
         if (newStatus === 'COMPLETED') {
-          await sendNotificationToAppUser(order.userId, 'Giao hàng thành công 🎉', `Đơn hàng #${order.id.slice(-6).toUpperCase()} đã giao thành công. Hãy để lại đánh giá nhé!`, 'ORDER_UPDATE', order.id, undefined, 'NAVIGATE_TO_REVIEW');
+          await sendNotificationToAppUser(
+            order.userId,
+            'Giao hàng thành công 🎉',
+            `Đơn hàng #${order.id.slice(-6).toUpperCase()} đã giao thành công. Hãy để lại đánh giá nhé!`,
+            'ORDER_UPDATE',
+            order.id,
+            undefined,
+            'NAVIGATE_TO_REVIEW'
+          );
         }
+
         if (newStatus === 'REFUNDING') {
-          await sendNotificationToAppUser(order.userId, 'Đồng ý Trả hàng ✅', `Shop đã chấp nhận trả hàng đơn #${order.id.slice(-6).toUpperCase()}. Shop sẽ sớm hoàn tiền cho bạn.`, 'ORDER_UPDATE', order.id);
+          await sendNotificationToAppUser(
+            order.userId,
+            'Đồng ý Trả hàng / Hoàn tiền ✅',
+            `Shop đã chấp nhận yêu cầu trả hàng của đơn #${order.id.slice(-6).toUpperCase()}. Shop sẽ sớm hoàn tiền cho bạn.`,
+            'ORDER_UPDATE',
+            order.id
+          );
         }
       }
+
       toast.success(successMessage);
     } catch (error) {
       console.error(error);
@@ -533,7 +588,13 @@ export default function OrdersPage() {
       });
       
       if (order.userId) {
-        await sendNotificationToAppUser(order.userId, 'Từ chối Trả hàng ❌', `Yêu cầu trả hàng đơn #${order.id.slice(-6).toUpperCase()} bị từ chối. Lý do: ${reason.trim()}`, 'ORDER_UPDATE', order.id);
+        await sendNotificationToAppUser(
+          order.userId,
+          'Từ chối Trả hàng / Hoàn tiền ❌',
+          `Shop đã từ chối yêu cầu của bạn. Lý do: ${reason.trim()}`,
+          'ORDER_UPDATE',
+          order.id
+        );
       }
       toast.success('Đã từ chối khiếu nại!');
     } catch (e) {
@@ -541,10 +602,9 @@ export default function OrdersPage() {
       toast.error('Lỗi khi từ chối!');
     } finally {
       setIsProcessingId(null);
-      setRejectReturnDialog(null);
+      setRejectReturnDialog(null); // Đóng Dialog
     }
   };
-
   const jumpToPage = () => {
     const next = Number(goToPageInput);
     if (!Number.isFinite(next)) {
@@ -571,9 +631,17 @@ export default function OrdersPage() {
     const previousStatus = toStatus(order.status);
 
     const pushAutoSupportMessage = async (targetOrder: OrderRecord, message: string) => {
-      if (!targetOrder.userId) throw new Error('Thiếu userId để tạo chat');
+      if (!targetOrder.userId) {
+        throw new Error('Thiếu userId để tạo chat hỗ trợ hoàn tiền');
+      }
+
       const now = Date.now();
-      const supportQuery = query(collection(db, 'channels'), where('userId', '==', targetOrder.userId), where('type', '==', 'SUPPORT'), limit(1));
+      const supportQuery = query(
+        collection(db, 'channels'),
+        where('userId', '==', targetOrder.userId),
+        where('type', '==', 'SUPPORT'),
+        limit(1)
+      );
       const supportSnap = await getDocs(supportQuery);
 
       let channelRef = doc(collection(db, 'channels'));
@@ -596,8 +664,23 @@ export default function OrdersPage() {
         channelRef = doc(db, 'channels', supportSnap.docs[0].id);
       }
       const messageRef = doc(collection(channelRef, 'messages'));
-      await setDoc(messageRef, { id: messageRef.id, channelId: channelRef.id, senderId: 'ADMIN', content: message, timestamp: now, isAdmin: true, type: 'TEXT' });
-      await updateDoc(channelRef, { lastMessage: message, lastSenderId: 'ADMIN', lastUpdated: now, status: 'ACTIVE', type: 'SUPPORT' });
+      await setDoc(messageRef, {
+        id: messageRef.id,
+        channelId: channelRef.id,
+        senderId: 'ADMIN',
+        content: message,
+        timestamp: now,
+        isAdmin: true,
+        type: 'TEXT',
+      });
+
+      await updateDoc(channelRef, {
+        lastMessage: message,
+        lastSenderId: 'ADMIN',
+        lastUpdated: now,
+        status: 'ACTIVE',
+        type: 'SUPPORT',
+      });
     };
 
     setIsProcessingId(order.id);
@@ -612,6 +695,7 @@ export default function OrdersPage() {
       const itemsToRestore = getItems(order);
       itemsToRestore.forEach((item: any) => {
         const productId = item.productId || item.product?.id; 
+        
         if (productId) {
           batch.update(doc(db, 'products', productId), {
             stock: increment(item.quantity || 1),
@@ -624,54 +708,91 @@ export default function OrdersPage() {
         const globalVoucherQuery = query(collection(db, 'vouchers'), where('code', '==', code), limit(1));
         const globalVoucherSnap = await getDocs(globalVoucherQuery);
         if (!globalVoucherSnap.empty) {
-          batch.update(globalVoucherSnap.docs[0].ref, { usedCount: increment(-1) });
+          batch.update(globalVoucherSnap.docs[0].ref, {
+            usedCount: increment(-1)
+          });
         }
-        const userVoucherQuery = query(collection(db, 'user_vouchers'), where('userId', '==', userId), where('voucher.code', '==', code), where('status', '==', 'USED'), limit(1));
+        const userVoucherQuery = query(
+          collection(db, 'user_vouchers'),
+          where('userId', '==', userId),
+          where('voucher.code', '==', code),
+          where('status', '==', 'USED'),
+          limit(1)
+        );
         const userVoucherSnap = await getDocs(userVoucherQuery);
         if (!userVoucherSnap.empty) {
-          batch.update(userVoucherSnap.docs[0].ref, { status: 'AVAILABLE' });
+          batch.update(userVoucherSnap.docs[0].ref, {
+            status: 'AVAILABLE'
+          });
         }
       };
       await restoreVoucher(order.discountCode, order.userId);
       await restoreVoucher(order.freeshipCode, order.userId);
       await batch.commit();
-
       if (order.userId) {
         if (paymentStatus === 'PAID' && previousStatus !== 'REFUNDING') {
           const notifyMessage = `Hệ thống: Đơn hàng #${order.id.slice(-6).toUpperCase()} đã bị Shop hủy. Lý do: ${resolvedReason}. Vui lòng nhắn tin Số Tài Khoản, Ngân hàng và Tên chủ tài khoản tại đây để Shop hoàn tiền nhé!`;
           await pushAutoSupportMessage(order, notifyMessage);
-          await sendNotificationToAppUser(order.userId, 'Đơn hàng đã bị hủy & Chờ hoàn tiền', `Đơn #${order.id.slice(-6).toUpperCase()} đã bị hủy. Vui lòng kiểm tra mục Chat để cung cấp STK.`, 'ORDER_UPDATE', order.id);
-          toast.success('Đơn đã chuyển sang chờ hoàn tiền, Đã hoàn Voucher và kho!');
+          
+          await sendNotificationToAppUser(
+            order.userId,
+            'Đơn hàng đã bị hủy & Chờ hoàn tiền 💸',
+            `Đơn #${order.id.slice(-6).toUpperCase()} đã bị hủy. Vui lòng kiểm tra mục Chat để cung cấp STK cho Shop.`,
+            'ORDER_UPDATE',
+            order.id
+          );
+          toast.success('Đơn đã chuyển sang chờ hoàn tiền, Đã hoàn Voucher và đã báo cho khách!');
         } else {
-          await sendNotificationToAppUser(order.userId, 'Đơn hàng đã bị hủy ❌', `Đơn #${order.id.slice(-6).toUpperCase()} đã bị hủy. Lý do: ${resolvedReason}`, 'ORDER_UPDATE', order.id);
+          await sendNotificationToAppUser(
+            order.userId,
+            'Đơn hàng đã bị hủy ❌',
+            `Đơn #${order.id.slice(-6).toUpperCase()} đã bị hủy. Lý do: ${resolvedReason}`,
+            'ORDER_UPDATE',
+            order.id
+          );
           toast.success('Đã hủy đơn hàng, hoàn tồn kho và hoàn Voucher thành công!');
         }
       }
     } catch (error) {
       console.error(error);
       toast.error('Lỗi khi cập nhật đơn hàng hoặc hoàn tồn kho!');
+      return;
     } finally {
       setIsProcessingId(null);
-      setCancelDialog(null);
     }
-  };
 
+    setCancelDialog(null);
+  };
   const handleReceiveReturn = async (order: OrderRecord) => {
     setIsProcessingId(order.id);
     try {
       const batch = writeBatch(db);
-      batch.update(doc(db, 'orders', order.id), { status: 'REFUNDING', updatedAt: Date.now() });
+
+      batch.update(doc(db, 'orders', order.id), {
+        status: 'REFUNDING',
+        updatedAt: Date.now(),
+      });
       const itemsToRestore = getItems(order);
       itemsToRestore.forEach((item: any) => {
         const productId = item.productId || item.product?.id; 
         if (productId) {
-          batch.update(doc(db, 'products', productId), { stock: increment(item.quantity || 1), sold: increment(-(item.quantity || 1)) });
+          batch.update(doc(db, 'products', productId), {
+            stock: increment(item.quantity || 1),
+            sold: increment(-(item.quantity || 1))
+          });
         }
       });
+
       await batch.commit();
 
       if (order.userId) {
-        await sendNotificationToAppUser(order.userId, 'Đã nhận hàng trả & Chờ hoàn tiền', `Shop đã nhận được hàng trả của đơn #${order.id.slice(-6).toUpperCase()}. Kế toán sẽ sớm xử lý hoàn tiền cho bạn.`, 'ORDER_UPDATE', order.id);
+        await sendNotificationToAppUser(
+          order.userId,
+          'Đã nhận hàng trả & Chờ hoàn tiền 💸',
+          `Shop đã nhận được hàng trả của đơn #${order.id.slice(-6).toUpperCase()}. Kế toán sẽ sớm xử lý hoàn tiền cho bạn.`,
+          'ORDER_UPDATE',
+          order.id
+        );
       }
       toast.success('Đã xác nhận nhận hàng và hoàn lại tồn kho thành công!');
     } catch (error) {
@@ -681,9 +802,10 @@ export default function OrdersPage() {
       setIsProcessingId(null);
     }
   };
-
   const closeRefundDialog = () => {
-    if (refundReceiptPreview) URL.revokeObjectURL(refundReceiptPreview);
+    if (refundReceiptPreview) {
+      URL.revokeObjectURL(refundReceiptPreview);
+    }
     setRefundDialog(null);
     setRefundReceiptFile(null);
     setRefundReceiptPreview('');
@@ -691,7 +813,9 @@ export default function OrdersPage() {
   };
 
   const openRefundDialog = (order: OrderRecord) => {
-    if (refundReceiptPreview) URL.revokeObjectURL(refundReceiptPreview);
+    if (refundReceiptPreview) {
+      URL.revokeObjectURL(refundReceiptPreview);
+    }
     setRefundDialog(order);
     setRefundReceiptFile(null);
     setRefundReceiptPreview('');
@@ -705,7 +829,11 @@ export default function OrdersPage() {
       event.target.value = '';
       return;
     }
-    if (refundReceiptPreview) URL.revokeObjectURL(refundReceiptPreview);
+
+    if (refundReceiptPreview) {
+      URL.revokeObjectURL(refundReceiptPreview);
+    }
+
     setRefundReceiptFile(file);
     setRefundReceiptPreview(URL.createObjectURL(file));
   };
@@ -718,39 +846,79 @@ export default function OrdersPage() {
     }
 
     const previousStatus = toStatus(refundDialog.status);
+
     const pushAutoSupportMessage = async (targetOrder: OrderRecord, message: string) => {
       if (!targetOrder.userId) return;
+
       const now = Date.now();
-      const supportQuery = query(collection(db, 'channels'), where('userId', '==', targetOrder.userId), where('type', '==', 'SUPPORT'), limit(1));
+      const supportQuery = query(
+        collection(db, 'channels'),
+        where('userId', '==', targetOrder.userId),
+        where('type', '==', 'SUPPORT'),
+        limit(1)
+      );
       const supportSnap = await getDocs(supportQuery);
+
       let channelRef = doc(collection(db, 'channels'));
       if (supportSnap.empty) {
         await setDoc(channelRef, {
-          id: channelRef.id, participants: [targetOrder.userId], userId: targetOrder.userId, userName: getName(targetOrder), userAvatar: targetOrder.userAvatar || '', receiverId: 'ADMIN', receiverName: 'Hỗ trợ Shop', lastMessage: '', lastUpdated: now, status: 'ACTIVE', type: 'SUPPORT', lastSenderId: 'ADMIN',
+          id: channelRef.id,
+          participants: [targetOrder.userId],
+          userId: targetOrder.userId,
+          userName: targetOrder.userName || targetOrder.customerName || targetOrder.fullName || getName(targetOrder),
+          userAvatar: targetOrder.userAvatar || '',
+          receiverId: 'ADMIN',
+          receiverName: 'Hỗ trợ Shop',
+          lastMessage: '',
+          lastUpdated: now,
+          status: 'ACTIVE',
+          type: 'SUPPORT',
+          lastSenderId: 'ADMIN',
         });
       } else {
         channelRef = doc(db, 'channels', supportSnap.docs[0].id);
       }
+
       const messageRef = doc(collection(channelRef, 'messages'));
-      await setDoc(messageRef, { id: messageRef.id, channelId: channelRef.id, senderId: 'ADMIN', content: message, timestamp: now, isAdmin: true, type: 'TEXT' });
-      await updateDoc(channelRef, { lastMessage: message, lastSenderId: 'ADMIN', lastUpdated: now, status: 'ACTIVE', type: 'SUPPORT' });
+      await setDoc(messageRef, {
+        id: messageRef.id,
+        channelId: channelRef.id,
+        senderId: 'ADMIN',
+        content: message,
+        timestamp: now,
+        isAdmin: true,
+        type: 'TEXT',
+      });
+
+      await updateDoc(channelRef, {
+        lastMessage: message,
+        lastSenderId: 'ADMIN',
+        lastUpdated: now,
+        status: 'ACTIVE',
+        type: 'SUPPORT',
+      });
     };
 
     setIsSubmittingRefund(true);
     try {
       const formData = new FormData();
       formData.append('file', refundReceiptFile);
-      formData.append('upload_preset', 'gundame-storepromax'); // Ensure this matches your Cloudinary setup
+      formData.append('upload_preset', 'gundame-storepromax');
 
       const cloudinaryResponse = await fetch('https://api.cloudinary.com/v1_1/djk7z1i0w/image/upload', {
         method: 'POST',
         body: formData,
       });
 
-      if (!cloudinaryResponse.ok) throw new Error('Upload biên lai thất bại');
+      if (!cloudinaryResponse.ok) {
+        throw new Error('Upload biên lai thất bại');
+      }
+
       const cloudinaryData = await cloudinaryResponse.json();
       const receiptUrl = cloudinaryData?.secure_url;
-      if (!receiptUrl) throw new Error('Không nhận được URL biên lai từ Cloudinary');
+      if (!receiptUrl) {
+        throw new Error('Không nhận được URL biên lai từ Cloudinary');
+      }
 
       await updateDoc(doc(db, 'orders', refundDialog.id), {
         status: 'REFUNDED',
@@ -760,10 +928,18 @@ export default function OrdersPage() {
       });
 
       if (previousStatus !== 'REFUNDED' && !refundDialog.refundNotifiedAt && refundDialog.userId) {
-        const refundSuccessMessage = `Hệ thống: Shop đã hoàn tất chuyển khoản hoàn tiền cho đơn hàng #${refundDialog.id.slice(-6).toUpperCase()}. Bạn vui lòng kiểm tra tài khoản ngân hàng nhé!`;
+        const refundSuccessMessage = `Hệ thống: Shop đã hoàn tất chuyển khoản hoàn tiền cho đơn hàng #${refundDialog.id.slice(-6).toUpperCase()}. Bạn vui lòng kiểm tra tài khoản ngân hàng nhé! Cảm ơn bạn.`;
         await pushAutoSupportMessage(refundDialog, refundSuccessMessage);
-        await sendNotificationToAppUser(refundDialog.userId, 'Đã Hoàn tiền thành công 💰', `Shop đã chuyển khoản hoàn tiền cho đơn #${refundDialog.id.slice(-6).toUpperCase()}. Kiểm tra biên lai trong chi tiết đơn nhé!`, 'ORDER_UPDATE', refundDialog.id);
+        
+        await sendNotificationToAppUser(
+          refundDialog.userId, 
+          'Đã Hoàn tiền thành công 💰', 
+          `Shop đã chuyển khoản hoàn tiền cho đơn #${refundDialog.id.slice(-6).toUpperCase()}. Kiểm tra biên lai trong chi tiết đơn nhé!`, 
+          'ORDER_UPDATE', 
+          refundDialog.id
+        );
       }
+
       toast.success('Đã xác nhận hoàn tiền và lưu biên lai thành công!');
       closeRefundDialog();
     } catch (error) {
@@ -773,30 +949,46 @@ export default function OrdersPage() {
       setIsSubmittingRefund(false);
     }
   };
-
+// 🌟 HÀM MỚI: CHUYỂN SANG TRANG CHAT VÀ ĐIỀN SẴN TEXT
   const handleChatWithUser = async (order: OrderRecord) => {
     if (!order.userId) {
       toast.error('Đơn hàng này không có tài khoản người dùng liên kết!');
       return;
     }
+
     setIsProcessingId('chat_' + order.id);
     try {
       const now = Date.now();
       const supportQuery = query(collection(db, 'channels'), where('userId', '==', order.userId), where('type', '==', 'SUPPORT'), limit(1));
       const supportSnap = await getDocs(supportQuery);
+      
       let channelId = '';
+
       if (supportSnap.empty) {
         const channelRef = doc(collection(db, 'channels'));
         channelId = channelRef.id;
         await setDoc(channelRef, {
-          id: channelId, participants: [order.userId], userId: order.userId, userName: getName(order), userAvatar: order.userAvatar || '', receiverId: 'ADMIN', receiverName: 'Hỗ trợ Shop', lastMessage: '', lastUpdated: now, status: 'ACTIVE', type: 'SUPPORT', lastSenderId: 'ADMIN',
+          id: channelId,
+          participants: [order.userId],
+          userId: order.userId,
+          userName: getName(order),
+          userAvatar: order.userAvatar || '',
+          receiverId: 'ADMIN',
+          receiverName: 'Hỗ trợ Shop',
+          lastMessage: '',
+          lastUpdated: now,
+          status: 'ACTIVE',
+          type: 'SUPPORT',
+          lastSenderId: 'ADMIN',
         });
       } else {
         channelId = supportSnap.docs[0].id;
       }
+
       const itemsText = getItems(order).map(item => `- ${item.quantity || 1}x ${getItemName(item)}`).join('\n');
       const prefillText = `Chào bạn, Shop liên hệ về đơn hàng #${order.id.slice(-6).toUpperCase()}:\n${itemsText}\n\n`;
       navigate(`/chat`, { state: { activeChannelId: channelId, prefillText: prefillText } });
+
     } catch (error) {
       console.error(error);
       toast.error('Lỗi khi mở Chat!');
@@ -804,62 +996,118 @@ export default function OrdersPage() {
       setIsProcessingId(null);
     }
   };
-
-  // 🌟 RENDER ACTIONS
   const renderOrderActions = (order: OrderRecord, status: OrderStatus) => (
     <div className="w-full xl:w-56 shrink-0 grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-1 gap-2">
+      
       {status === 'PENDING' && (
-        <button disabled={isProcessingId === order.id} onClick={() => updateOrderStatus(order, 'CONFIRMED', 'Đã duyệt đơn! Chuyển sang chờ lấy hàng.')} className="min-h-11 py-2.5 px-3 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-bold rounded-xl shadow-lg shadow-indigo-200 transition-colors disabled:opacity-50">
-          {isProcessingId === order.id ? 'Đang xử lý...' : 'Duyệt đơn (Chờ lấy hàng)'}
-        </button>
+        <>
+          {/* 🌟 LOGIC CHẶN LUỒNG: Đơn chuyển khoản nhưng CHƯA thanh toán -> KHÓA NÚT */}
+          {order.status === 'AWAITING_PAYMENT' && toPaymentStatus(order.paymentStatus) === 'UNPAID' ? (
+            <button
+              disabled={true}
+              className="min-h-11 py-2.5 px-3 bg-slate-200 text-slate-500 text-sm font-bold rounded-xl border border-slate-300 shadow-inner cursor-not-allowed w-full"
+              title="Không thể duyệt. Khách hàng đang trong quá trình chuyển khoản."
+            >
+              Chờ khách thanh toán...
+            </button>
+          ) : (
+            <button
+              disabled={isProcessingId === order.id}
+              onClick={() => updateOrderStatus(order, 'CONFIRMED', 'Đã duyệt đơn! Chuyển sang chờ lấy hàng.')}
+              className="min-h-11 py-2.5 px-3 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-bold rounded-xl shadow-lg shadow-indigo-200 transition-colors disabled:opacity-50 w-full"
+            >
+              {isProcessingId === order.id ? 'Đang xử lý...' : 'Duyệt đơn (Chờ lấy hàng)'}
+            </button>
+          )}
+        </>
       )}
 
       {status === 'CONFIRMED' && (
-        <button disabled={isProcessingId === order.id} onClick={() => updateOrderStatus(order, 'SHIPPING', 'Đã giao cho đơn vị vận chuyển!')} className="min-h-11 py-2.5 px-3 bg-blue-600 hover:bg-blue-700 text-white text-sm font-bold rounded-xl shadow-lg shadow-blue-200 transition-colors disabled:opacity-50">
+        <button
+          disabled={isProcessingId === order.id}
+          onClick={() => updateOrderStatus(order, 'SHIPPING', 'Đã giao cho đơn vị vận chuyển!')}
+          className="min-h-11 py-2.5 px-3 bg-blue-600 hover:bg-blue-700 text-white text-sm font-bold rounded-xl shadow-lg shadow-blue-200 transition-colors disabled:opacity-50"
+        >
           {isProcessingId === order.id ? 'Đang xử lý...' : 'Giao cho ĐVVC'}
         </button>
       )}
 
       {status === 'SHIPPING' && (
-        <button disabled={isProcessingId === order.id} onClick={() => updateOrderStatus(order, 'COMPLETED', 'Đã giao hàng thành công!')} className="min-h-11 py-2.5 px-3 bg-emerald-500 hover:bg-emerald-600 text-white text-sm font-bold rounded-xl shadow-lg shadow-emerald-200 transition-colors disabled:opacity-50">
+        <button
+          disabled={isProcessingId === order.id}
+          onClick={() => updateOrderStatus(order, 'COMPLETED', 'Đã giao hàng thành công!')}
+          className="min-h-11 py-2.5 px-3 bg-emerald-500 hover:bg-emerald-600 text-white text-sm font-bold rounded-xl shadow-lg shadow-emerald-200 transition-colors disabled:opacity-50"
+        >
           {isProcessingId === order.id ? 'Đang xử lý...' : 'Hoàn thành (Đã nhận)'}
         </button>
       )}
 
+      {/* 🌟 NÚT XỬ LÝ YÊU CẦU TRẢ HÀNG TỪ KHÁCH (Đã dọn dẹp không còn bị trùng) */}
       {status === 'RETURN_PENDING' && (
         <div className="flex flex-col gap-2 w-full mt-2">
-            <button disabled={isProcessingId === order.id} onClick={() => updateOrderStatus(order, 'RETURN_APPROVED', 'Đã duyệt! Chờ khách gửi trả hàng về Shop.')} className="min-h-11 py-2.5 px-3 bg-blue-600 hover:bg-blue-700 text-white text-sm font-bold rounded-xl shadow-lg transition-colors disabled:opacity-50">
+            <button
+              disabled={isProcessingId === order.id}
+              onClick={() => updateOrderStatus(order, 'RETURN_APPROVED', 'Đã duyệt! Chờ khách gửi trả hàng về Shop.')}
+              className="min-h-11 py-2.5 px-3 bg-blue-600 hover:bg-blue-700 text-white text-sm font-bold rounded-xl shadow-lg transition-colors disabled:opacity-50"
+            >
               Chấp nhận (Chờ gửi trả)
             </button>
-            <button disabled={isProcessingId === order.id} onClick={() => setRejectReturnDialog({ order, reason: '' })} className="min-h-11 py-2.5 px-3 bg-white border border-red-200 text-red-600 hover:bg-red-50 text-sm font-bold rounded-xl transition-colors disabled:opacity-50">
+            <button
+              disabled={isProcessingId === order.id}
+              onClick={() => setRejectReturnDialog({ order, reason: '' })}
+              className="min-h-11 py-2.5 px-3 bg-white border border-red-200 text-red-600 hover:bg-red-50 text-sm font-bold rounded-xl transition-colors disabled:opacity-50"
+            >
               Từ chối khiếu nại
             </button>
         </div>
       )}
 
+      {/* 🌟 NÚT XÁC NHẬN KHI SHOP NHẬN ĐƯỢC HÀNG TRẢ VỀ */}
       {status === 'RETURNING' && (
-        <button disabled={isProcessingId === order.id} onClick={() => handleReceiveReturn(order)} className="min-h-11 py-2.5 px-3 bg-cyan-600 hover:bg-cyan-700 text-white text-sm font-bold rounded-xl shadow-lg transition-colors disabled:opacity-50 mt-2">
+        <button
+          disabled={isProcessingId === order.id}
+          onClick={() => handleReceiveReturn(order)}
+          className="min-h-11 py-2.5 px-3 bg-cyan-600 hover:bg-cyan-700 text-white text-sm font-bold rounded-xl shadow-lg transition-colors disabled:opacity-50 mt-2"
+        >
           {isProcessingId === order.id ? 'Đang xử lý...' : 'Đã nhận được hàng trả'}
         </button>
       )}
 
-      {['PENDING', 'AWAITING_PAYMENT'].includes(status) && (
-        <button disabled={isProcessingId === order.id} onClick={() => setCancelDialog({ order, reason: CANCEL_REASONS[0], customReason: '' })} className="min-h-11 py-2.5 px-3 bg-white border border-red-200 text-red-600 hover:bg-red-50 text-sm font-bold rounded-xl transition-colors disabled:opacity-50">
+      {['PENDING'].includes(status) && (
+        <button
+          disabled={isProcessingId === order.id}
+          onClick={() => setCancelDialog({ order, reason: CANCEL_REASONS[0], customReason: '' })}
+          className="min-h-11 py-2.5 px-3 bg-white border border-red-200 text-red-600 hover:bg-red-50 text-sm font-bold rounded-xl transition-colors disabled:opacity-50"
+        >
           Hủy đơn
         </button>
       )}
 
+      {/* 🌟 NÚT NÀY SẼ MỞ RA DIALOG UP BIÊN LAI HOÀN TIỀN (CHUNG CHO CẢ HỦY VÀ TRẢ HÀNG) */}
       {status === 'REFUNDING' && (
-        <button disabled={isProcessingId === order.id} onClick={() => openRefundDialog(order)} className="min-h-11 py-2.5 px-3 bg-fuchsia-100 border border-fuchsia-200 text-fuchsia-700 hover:bg-fuchsia-200 text-sm font-bold rounded-xl transition-colors disabled:opacity-50">
+        <button
+          disabled={isProcessingId === order.id}
+          onClick={() => openRefundDialog(order)}
+          className="min-h-11 py-2.5 px-3 bg-fuchsia-100 border border-fuchsia-200 text-fuchsia-700 hover:bg-fuchsia-200 text-sm font-bold rounded-xl transition-colors disabled:opacity-50"
+        >
           Xử lý hoàn tiền
         </button>
       )}
 
+      {/* Thay thế nút Chi tiết cũ bằng Cụm 2 nút này */}
       <div className="grid grid-cols-2 gap-2 mt-1">
-        <button onClick={() => handleChatWithUser(order)} disabled={isProcessingId === 'chat_' + order.id} className="min-h-11 py-2.5 px-2 bg-blue-50 border border-blue-200 text-blue-700 hover:bg-blue-100 text-[13px] font-bold rounded-xl transition-colors flex justify-center items-center gap-1.5">
+        <button
+          onClick={() => handleChatWithUser(order)}
+          disabled={isProcessingId === 'chat_' + order.id}
+          className="min-h-11 py-2.5 px-2 bg-blue-50 border border-blue-200 text-blue-700 hover:bg-blue-100 text-[13px] font-bold rounded-xl transition-colors flex justify-center items-center gap-1.5"
+        >
           <MessageSquare className="w-4 h-4" /> {isProcessingId === 'chat_' + order.id ? '...' : 'Nhắn tin'}
         </button>
-        <button onClick={() => setSelectedOrder(order)} className="min-h-11 py-2.5 px-2 bg-slate-50 border border-slate-200 text-slate-700 hover:bg-slate-100 text-[13px] font-bold rounded-xl transition-colors flex justify-center items-center gap-1.5">
+
+        <button
+          onClick={() => setSelectedOrder(order)}
+          className="min-h-11 py-2.5 px-2 bg-slate-50 border border-slate-200 text-slate-700 hover:bg-slate-100 text-[13px] font-bold rounded-xl transition-colors flex justify-center items-center gap-1.5"
+        >
           <Eye className="w-4 h-4" /> Chi tiết
         </button>
       </div>
@@ -872,15 +1120,15 @@ export default function OrdersPage() {
   const refundBankCode = refundDialog ? String(refundDialog.refundBankBin || refundDialog.refundBankShortName || '').trim() : '';
   const refundAccountName = refundDialog?.refundAccountName || 'Chưa cập nhật';
   const refundAccountNumber = refundDialog?.refundAccountNumber || 'Chưa cập nhật';
-  const refundQrSrc = hasBankInfo && refundDialog && refundBankCode && refundDialog.refundAccountNumber
+  const refundQrSrc =
+    hasBankInfo && refundDialog && refundBankCode && refundDialog.refundAccountNumber
       ? `https://img.vietqr.io/image/${refundBankCode}-${refundDialog.refundAccountNumber}-compact2.png?amount=${refundTotalPrice}&addInfo=${encodeURIComponent(`HOAN TIEN DON ${refundDialog.id}`)}&accountName=${encodeURIComponent(refundDialog.refundAccountName || '')}`
       : '';
 
   return (
     <div className="flex flex-col animate-in fade-in duration-300 relative h-full">
       <div className="px-4 sm:px-6 lg:px-8 pt-4 sm:pt-6 lg:pt-8 pb-4">
-        {/* 🌟 HEADER BANNER */}
-        <div className="relative px-5 sm:px-6 lg:px-8 py-6 rounded-[28px] border border-slate-900/10 bg-gradient-to-r from-emerald-950 via-emerald-900 to-teal-900 text-white mb-6 shadow-md">
+        <div className="relative px-5 sm:px-6 lg:px-8 py-6 rounded-[28px] border border-slate-900/10 bg-gradient-to-r from-emerald-950 via-emerald-900 to-teal-900 text-white mb-6">
           <div className="absolute inset-0 opacity-40 pointer-events-none" style={{ backgroundImage: 'radial-gradient(circle at 20% 20%, rgba(52,211,153,0.22), transparent 0), radial-gradient(circle at 80% 0%, rgba(45,212,191,0.18), transparent 0)' }} />
           <div className="relative flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
             <div className="max-w-2xl">
@@ -888,29 +1136,23 @@ export default function OrdersPage() {
               <h1 className="mt-2 text-2xl sm:text-3xl font-black tracking-tight">Danh sách Đơn hàng</h1>
               <p className="mt-2 text-sm sm:text-base text-slate-300 leading-relaxed">Duyệt đơn, theo dõi vận chuyển và xử lý khiếu nại, hoàn tiền.</p>
             </div>
-            {/* 🌟 STAT CARDS IN HEADER */}
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 w-full lg:w-auto lg:min-w-[500px]">
-              <div className="rounded-2xl bg-white/10 border border-white/10 px-4 py-3 hover:bg-white/20 transition-colors cursor-pointer" onClick={() => handleTabChange('AWAITING_PAYMENT')}>
-                <p className="text-[10px] uppercase tracking-widest text-slate-300 font-semibold truncate">Chờ TT QR</p>
-                <p className="mt-1 text-2xl font-black text-rose-300">{stats.awaitingPayment}</p>
-              </div>
-              <div className="rounded-2xl bg-white/10 border border-white/10 px-4 py-3 hover:bg-white/20 transition-colors cursor-pointer" onClick={() => handleTabChange('PENDING')}>
-                <p className="text-[10px] uppercase tracking-widest text-slate-300 font-semibold truncate">Cần duyệt</p>
+            <div className="grid grid-cols-3 gap-3 w-full lg:w-auto lg:min-w-[420px]">
+              <div className="rounded-2xl bg-white/10 border border-white/10 px-4 py-3">
+                <p className="text-[11px] uppercase tracking-widest text-slate-300 font-semibold">Cần duyệt</p>
                 <p className="mt-1 text-2xl font-black text-amber-400">{stats.pending}</p>
               </div>
-              <div className="rounded-2xl bg-white/10 border border-white/10 px-4 py-3 hover:bg-white/20 transition-colors cursor-pointer" onClick={() => handleTabChange('SHIPPING')}>
-                <p className="text-[10px] uppercase tracking-widest text-slate-300 font-semibold truncate">Đang giao</p>
+              <div className="rounded-2xl bg-white/10 border border-white/10 px-4 py-3">
+                <p className="text-[11px] uppercase tracking-widest text-slate-300 font-semibold">Đang giao</p>
                 <p className="mt-1 text-2xl font-black text-blue-300">{stats.shipping}</p>
               </div>
-              <div className="rounded-2xl bg-white/10 border border-white/10 px-4 py-3 hover:bg-white/20 transition-colors cursor-pointer" onClick={() => handleTabChange('COMPLETED')}>
-                <p className="text-[10px] uppercase tracking-widest text-slate-300 font-semibold truncate">Doanh thu</p>
-                <p className="mt-1 text-lg font-black text-emerald-300 truncate" title={formatMoney(stats.revenue)}>{formatMoney(stats.revenue)}</p>
+              <div className="rounded-2xl bg-white/10 border border-white/10 px-4 py-3">
+                <p className="text-[11px] uppercase tracking-widest text-slate-300 font-semibold">Tổng doanh thu</p>
+                <p className="mt-1 text-xl font-black text-emerald-300">{formatMoney(stats.revenue)}</p>
               </div>
             </div>
           </div>
         </div>
 
-        {/* 🌟 BỘ LỌC VÀ SEARCH TỐI ƯU UI/UX MỚI */}
         <div className="flex flex-col xl:flex-row gap-4 justify-between items-center bg-white p-4 rounded-2xl border border-slate-200 shadow-sm mb-6">
           <div className="relative w-full xl:w-96">
             <Search className="w-5 h-5 absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
@@ -927,7 +1169,7 @@ export default function OrdersPage() {
             {STATUS_OPTIONS.map((status) => (
               <button
                 key={status.value}
-                onClick={() => handleTabChange(status.value as OrderStatus | 'ALL')}
+                onClick={() => setStatusFilter(status.value)}
                 className={`px-4 py-2.5 rounded-xl text-sm font-bold transition-all whitespace-nowrap inline-flex items-center gap-2 ${statusFilter === status.value ? 'bg-slate-900 text-white shadow-md' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
               >
                 {status.label}
@@ -937,10 +1179,18 @@ export default function OrdersPage() {
               </button>
             ))}
             <div className="ml-2 flex items-center bg-slate-100 border border-slate-200 rounded-xl p-1 shrink-0">
-              <button onClick={() => setViewMode('LIST')} className={`h-9 w-9 rounded-lg grid place-items-center transition-colors ${viewMode === 'LIST' ? 'bg-white text-emerald-700 shadow' : 'text-slate-500 hover:text-slate-700'}`} title="Dạng danh sách">
+              <button
+                onClick={() => setViewMode('LIST')}
+                className={`h-9 w-9 rounded-lg grid place-items-center transition-colors ${viewMode === 'LIST' ? 'bg-white text-emerald-700 shadow' : 'text-slate-500 hover:text-slate-700'}`}
+                title="Dạng danh sách"
+              >
                 <LayoutList className="w-4 h-4" />
               </button>
-              <button onClick={() => setViewMode('KANBAN')} className={`h-9 w-9 rounded-lg grid place-items-center transition-colors ${viewMode === 'KANBAN' ? 'bg-white text-emerald-700 shadow' : 'text-slate-500 hover:text-slate-700'}`} title="Dạng Kanban">
+              <button
+                onClick={() => setViewMode('KANBAN')}
+                className={`h-9 w-9 rounded-lg grid place-items-center transition-colors ${viewMode === 'KANBAN' ? 'bg-white text-emerald-700 shadow' : 'text-slate-500 hover:text-slate-700'}`}
+                title="Dạng Kanban"
+              >
                 <KanbanSquare className="w-4 h-4" />
               </button>
             </div>
@@ -953,7 +1203,8 @@ export default function OrdersPage() {
           </div>
         ) : filteredOrders.length === 0 ? (
           <div className="rounded-3xl border border-dashed border-slate-300 bg-white py-20 text-center text-slate-500 font-medium flex flex-col items-center">
-            <ShoppingCart className="w-12 h-12 mb-4 text-slate-300" /> Không tìm thấy đơn hàng nào phù hợp.
+            <ShoppingCart className="w-12 h-12 mb-4 text-slate-300" />
+            Không tìm thấy đơn hàng nào phù hợp.
           </div>
         ) : (
           <>
@@ -1009,9 +1260,12 @@ export default function OrdersPage() {
                     return (
                       <div key={column.status} className="rounded-2xl border border-slate-200 bg-slate-50/70 p-3">
                         <div className="mb-3 flex items-center justify-between">
-                          <div className="flex items-center gap-2">{getStatusBadge(column.status)}</div>
+                          <div className="flex items-center gap-2">
+                            {getStatusBadge(column.status)}
+                          </div>
                           <span className="text-xs font-bold text-slate-500 bg-white border border-slate-200 px-2 py-1 rounded-lg">{columnOrders.length}</span>
                         </div>
+
                         <div className="space-y-3 max-h-[560px] overflow-y-auto custom-scrollbar pr-1">
                           {columnOrders.length === 0 ? (
                             <div className="rounded-xl border border-dashed border-slate-300 bg-white p-4 text-xs text-slate-500 text-center">Không có đơn trong cột này</div>
@@ -1033,10 +1287,14 @@ export default function OrdersPage() {
                                   <p className="text-[11px] text-slate-400 mt-1">{formatTime(order.createdAt)}</p>
                                   <div className="mt-2 space-y-1">
                                     {items.slice(0, 2).map((item, idx) => (
-                                      <p key={idx} className="text-xs text-slate-600 truncate"><span className="font-bold text-blue-600">{item.quantity || 1}x</span> {getItemName(item)}</p>
+                                      <p key={idx} className="text-xs text-slate-600 truncate">
+                                        <span className="font-bold text-blue-600">{item.quantity || 1}x</span> {getItemName(item)}
+                                      </p>
                                     ))}
                                   </div>
-                                  <div className="mt-3">{renderOrderActions(order, column.status)}</div>
+                                  <div className="mt-3">
+                                    {renderOrderActions(order, column.status)}
+                                  </div>
                                 </div>
                               );
                             })
@@ -1049,31 +1307,80 @@ export default function OrdersPage() {
               </div>
             )}
 
-            {/* 🌟 BỘ PHÂN TRANG (PAGINATION) CHUẨN UI */}
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 bg-white border border-slate-200 rounded-2xl p-3 sm:p-4 mb-8">
               <p className="text-sm font-semibold text-slate-600">
                 Hiển thị {(safePage - 1) * pageSize + 1}-{Math.min(safePage * pageSize, filteredOrders.length)} / {filteredOrders.length} đơn hàng
               </p>
+
               <div className="flex items-center gap-2 flex-wrap justify-end">
-                <select value={pageSize} onChange={(e) => setPageSize(Number(e.target.value))} className="h-10 px-3 rounded-xl border border-slate-200 bg-slate-50 text-sm font-semibold text-slate-700 outline-none focus:ring-2 focus:ring-emerald-100" title="Số dòng mỗi trang">
-                  {PAGE_SIZE_OPTIONS.map((size) => (<option key={size} value={size}>{size}/trang</option>))}
+                <select
+                  value={pageSize}
+                  onChange={(e) => setPageSize(Number(e.target.value))}
+                  className="h-10 px-3 rounded-xl border border-slate-200 bg-slate-50 text-sm font-semibold text-slate-700 outline-none focus:ring-2 focus:ring-emerald-100"
+                  title="Số dòng mỗi trang"
+                >
+                  {PAGE_SIZE_OPTIONS.map((size) => (
+                    <option key={size} value={size}>
+                      {size}/trang
+                    </option>
+                  ))}
                 </select>
                 <div className="flex items-center gap-2">
-                  <input value={goToPageInput} onChange={(e) => setGoToPageInput(e.target.value.replace(/[^0-9]/g, ''))} onKeyDown={(e) => { if (e.key === 'Enter') jumpToPage(); }} className="h-10 w-16 text-center rounded-xl border border-slate-200 bg-slate-50 text-sm font-semibold text-slate-700 outline-none focus:ring-2 focus:ring-emerald-100" title="Đi tới trang" />
-                  <button onClick={jumpToPage} className="h-10 px-3 rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 text-sm font-semibold text-slate-700">Đi</button>
+                  <input
+                    value={goToPageInput}
+                    onChange={(e) => setGoToPageInput(e.target.value.replace(/[^0-9]/g, ''))}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') jumpToPage();
+                    }}
+                    className="h-10 w-16 text-center rounded-xl border border-slate-200 bg-slate-50 text-sm font-semibold text-slate-700 outline-none focus:ring-2 focus:ring-emerald-100"
+                    title="Đi tới trang"
+                  />
+                  <button
+                    onClick={jumpToPage}
+                    className="h-10 px-3 rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 text-sm font-semibold text-slate-700"
+                  >
+                    Đi
+                  </button>
                 </div>
-                <button onClick={() => setCurrentPage(1)} disabled={safePage === 1} className="h-10 w-10 grid place-items-center rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 disabled:opacity-50" title="Trang đầu"><ChevronsLeft className="w-4 h-4" /></button>
-                <button onClick={() => setCurrentPage((p) => Math.max(1, p - 1))} disabled={safePage === 1} className="h-10 w-10 grid place-items-center rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 disabled:opacity-50" title="Trang trước"><ChevronLeft className="w-4 h-4" /></button>
+                <button
+                  onClick={() => setCurrentPage(1)}
+                  disabled={safePage === 1}
+                  className="h-10 w-10 grid place-items-center rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 disabled:opacity-50"
+                  title="Trang đầu"
+                >
+                  <ChevronsLeft className="w-4 h-4" />
+                </button>
+                <button
+                  onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                  disabled={safePage === 1}
+                  className="h-10 w-10 grid place-items-center rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 disabled:opacity-50"
+                  title="Trang trước"
+                >
+                  <ChevronLeft className="w-4 h-4" />
+                </button>
                 <span className="px-3 text-sm font-bold text-slate-700">{safePage}/{totalPages}</span>
-                <button onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))} disabled={safePage === totalPages} className="h-10 w-10 grid place-items-center rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 disabled:opacity-50" title="Trang sau"><ChevronRight className="w-4 h-4" /></button>
-                <button onClick={() => setCurrentPage(totalPages)} disabled={safePage === totalPages} className="h-10 w-10 grid place-items-center rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 disabled:opacity-50" title="Trang cuối"><ChevronsRight className="w-4 h-4" /></button>
+                <button
+                  onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                  disabled={safePage === totalPages}
+                  className="h-10 w-10 grid place-items-center rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 disabled:opacity-50"
+                  title="Trang sau"
+                >
+                  <ChevronRight className="w-4 h-4" />
+                </button>
+                <button
+                  onClick={() => setCurrentPage(totalPages)}
+                  disabled={safePage === totalPages}
+                  className="h-10 w-10 grid place-items-center rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 disabled:opacity-50"
+                  title="Trang cuối"
+                >
+                  <ChevronsRight className="w-4 h-4" />
+                </button>
               </div>
             </div>
           </>
         )}
       </div>
 
-      {/* 🌟 DIALOG CHI TIẾT ĐƠN HÀNG */}
       {selectedOrder && (
         <div className="fixed inset-0 z-[100] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 sm:p-6">
           <div className="w-full max-w-5xl max-h-[90vh] flex flex-col rounded-3xl bg-white shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200">
@@ -1094,7 +1401,7 @@ export default function OrdersPage() {
 
             <div className="p-6 overflow-y-auto custom-scrollbar flex-1 bg-white">
               
-              {/* KHU VỰC KHIẾU NẠI TRẢ HÀNG */}
+              {/* 🌟 KHU VỰC KHIẾU NẠI TRẢ HÀNG */}
               {['RETURN_PENDING', 'RETURN_APPROVED', 'RETURNING', 'RETURN_REJECTED', 'REFUNDING', 'REFUNDED'].includes(toStatus(selectedOrder.status)) && selectedOrder.returnReason && (
                 <div className="mb-6 rounded-2xl border border-orange-200 bg-orange-50 p-4">
                   <h4 className="text-xs font-black uppercase tracking-widest text-orange-800 mb-2 flex items-center gap-2"><AlertTriangle className="w-4 h-4"/> Yêu cầu Trả hàng / Khiếu nại từ khách</h4>
@@ -1116,6 +1423,7 @@ export default function OrdersPage() {
                         <p className="text-sm font-bold text-red-600">Shop từ chối: {selectedOrder.cancelReason}</p>
                      </div>
                   )}
+                  {/* 🌟 THÊM: Hiển thị mã vận đơn nếu khách đã nhập */}
                   {selectedOrder.returnTrackingCode && (
                     <div className="mt-3 pt-3 border-t border-orange-200">
                         <p className="text-sm font-bold text-slate-800">Mã vận đơn hoàn hàng (Khách gửi): <span className="text-cyan-700">{selectedOrder.returnTrackingCode}</span></p>
@@ -1124,7 +1432,7 @@ export default function OrdersPage() {
                 </div>
               )}
 
-              {/* KHU VỰC HỦY ĐƠN */}
+              {/* 🌟 KHU VỰC HỦY ĐƠN */}
               {['CANCELLED'].includes(toStatus(selectedOrder.status)) && selectedOrder.cancelReason && (
                 <div className="mb-4 rounded-2xl border border-red-200 bg-red-50 px-4 py-3">
                   <p className="text-xs font-black uppercase tracking-widest text-red-600 mb-1">Lý do hủy đơn</p>
@@ -1180,7 +1488,7 @@ export default function OrdersPage() {
                     </div>
                   </div>
 
-                  {/* KHU VỰC THÔNG TIN HOÀN TIỀN CÓ MÃ VIETQR */}
+                  {/* 🌟 KHU VỰC THÔNG TIN HOÀN TIỀN CÓ MÃ VIETQR */}
                   {toStatus(selectedOrder.status) === 'REFUNDING' && selectedOrder.refundAccountNumber && (
                     <div className="bg-fuchsia-50 rounded-2xl p-4 border border-fuchsia-100 animate-in slide-in-from-bottom-2">
                       <h4 className="text-xs font-black uppercase tracking-widest text-fuchsia-800 mb-4 flex items-center gap-2">
@@ -1284,7 +1592,6 @@ export default function OrdersPage() {
         </div>
       )}
 
-      {/* 🌟 DIALOG XÁC NHẬN HOÀN TIỀN (UPLOAD BIÊN LAI) */}
       {refundDialog && (
         <div className="fixed inset-0 z-[130] bg-slate-950/70 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="w-full max-w-2xl rounded-3xl border border-fuchsia-100 bg-white shadow-2xl animate-in fade-in zoom-in-95 duration-200 overflow-hidden flex flex-col max-h-[90vh]">
@@ -1382,7 +1689,6 @@ export default function OrdersPage() {
         </div>
       )}
 
-      {/* 🌟 DIALOG HỦY ĐƠN */}
       {cancelDialog && (
         <div className="fixed inset-0 z-[120] bg-slate-950/70 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="w-full max-w-md rounded-3xl border border-red-100 bg-white shadow-2xl animate-in fade-in zoom-in-95 duration-200 overflow-hidden">
@@ -1394,6 +1700,10 @@ export default function OrdersPage() {
               <p className="mt-2 text-center text-sm text-slate-600">
                 Đơn #{cancelDialog.order.id.slice(-6).toUpperCase()} sẽ được xử lý theo trạng thái thanh toán hiện tại.
               </p>
+              <div className="mt-4 flex items-center justify-center gap-2">
+                {getStatusBadge(toStatus(cancelDialog.order.status))}
+                {getSmartPaymentBadge(cancelDialog.order)}
+              </div>
 
               <div className="mt-5 rounded-2xl border border-slate-200 bg-slate-50 p-4">
                 <p className="text-xs font-black uppercase tracking-widest text-slate-500 mb-3">Lý do hủy đơn</p>
@@ -1454,7 +1764,6 @@ export default function OrdersPage() {
           </div>
         </div>
       )}
-
       {/* 🌟 DIALOG TỪ CHỐI KHIẾU NẠI MỚI */}
       {rejectReturnDialog && (
         <div className="fixed inset-0 z-[120] bg-slate-950/70 backdrop-blur-sm flex items-center justify-center p-4">
