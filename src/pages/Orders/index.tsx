@@ -222,6 +222,8 @@ const getItems = (order: OrderRecord): OrderItem[] =>
   [];
 const getTotal = (order: OrderRecord) => Number(order.totalAmount || order.totalPrice || 0);
 const getSubTotal = (order: OrderRecord) => Number(order.subTotal || order.totalAmount || order.totalPrice || 0);
+const REVENUE_RECOGNIZED_STATUSES = new Set<OrderStatus>(['COMPLETED', 'RETURN_REJECTED']);
+const isRevenueRecognizedOrder = (order: OrderRecord) => REVENUE_RECOGNIZED_STATUSES.has(toStatus(order.status));
 const getDiscountAmount = (order: OrderRecord) =>
   Number(order.voucherDiscount || order.discountAmount || order.discountValue || order.shippingDiscount || 0);
 const getShippingFee = (order: OrderRecord) => Number(order.shippingFeeAfterDiscount ?? order.shippingFee ?? 0);
@@ -316,7 +318,7 @@ export default function OrdersPage() {
   const stats = useMemo(() => {
     const pending = orders.filter((o) => toStatus(o.status) === 'PENDING').length;
     const shipping = orders.filter((o) => toStatus(o.status) === 'SHIPPING').length;
-    const revenue = orders.filter((o) => toStatus(o.status) === 'COMPLETED').reduce((sum, o) => sum + getTotal(o), 0);
+    const revenue = orders.filter(isRevenueRecognizedOrder).reduce((sum, o) => sum + getTotal(o), 0);
     return { pending, shipping, revenue };
   }, [orders]);
 
@@ -328,6 +330,8 @@ export default function OrdersPage() {
       SHIPPING: 0,
       COMPLETED: 0,
       RETURN_PENDING: 0,
+      RETURN_APPROVED: 0,
+      RETURNING: 0,
       RETURN_REJECTED: 0,
       CANCELLED: 0,
       REFUNDING: 0,

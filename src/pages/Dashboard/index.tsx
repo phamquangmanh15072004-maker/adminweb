@@ -23,13 +23,26 @@ dayjs.extend(relativeTime);
 dayjs.locale('vi');
 
 // ============= Types =============
-type OrderStatus = 'PENDING' | 'COMPLETED' | 'CANCELLED';
+type OrderStatus =
+  | 'PENDING'
+  | 'CONFIRMED'
+  | 'SHIPPING'
+  | 'COMPLETED'
+  | 'RETURN_PENDING'
+  | 'RETURN_APPROVED'
+  | 'RETURNING'
+  | 'RETURN_REJECTED'
+  | 'CANCELLED'
+  | 'REFUNDING'
+  | 'REFUNDED'
+  | 'UNKNOWN';
 
 interface Order {
   id: string;
-  totalPrice: number;
-  totalProfit: number;
-  status: OrderStatus;
+  totalAmount?: number;
+  totalPrice?: number;
+  totalProfit?: number;
+  status?: string;
   createdAt: number;
 }
 
@@ -49,6 +62,44 @@ interface Product {
 const formatMoney = (value: number) =>
   new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND', maximumFractionDigits: 0 }).format(value || 0);
 
+const toStatus = (value?: string): OrderStatus => {
+  const status = String(value || '').toUpperCase();
+  if (
+    !status ||
+    status === 'NEW' ||
+    status === 'PAID' ||
+    status === 'SUCCESS' ||
+    status === 'PROCESSING' ||
+    status === 'AWAITING_PAYMENT'
+  ) {
+    return 'PENDING';
+  }
+
+  if (status === 'REFUND_PENDING') return 'REFUNDING';
+
+  if (
+    status === 'PENDING' ||
+    status === 'CONFIRMED' ||
+    status === 'SHIPPING' ||
+    status === 'COMPLETED' ||
+    status === 'RETURN_PENDING' ||
+    status === 'RETURN_APPROVED' ||
+    status === 'RETURNING' ||
+    status === 'RETURN_REJECTED' ||
+    status === 'CANCELLED' ||
+    status === 'REFUNDING' ||
+    status === 'REFUNDED'
+  ) {
+    return status as OrderStatus;
+  }
+
+  return 'UNKNOWN';
+};
+
+const REVENUE_RECOGNIZED_STATUSES = new Set<OrderStatus>(['COMPLETED', 'RETURN_REJECTED']);
+const isRevenueRecognizedOrder = (order: Order) => REVENUE_RECOGNIZED_STATUSES.has(toStatus(order.status));
+const getOrderTotal = (order: Order) => Number(order.totalAmount || order.totalPrice || 0);
+
 /**
  * Nhóm orders theo ngày trong 7 ngày gần nhất
  */
@@ -67,11 +118,11 @@ const groupOrdersByDateLast7Days = (orders: Order[]) => {
 
     const dayOrders = orders.filter(
       (order) =>
-        order.status === 'COMPLETED' &&
+        isRevenueRecognizedOrder(order) &&
         dayjs(order.createdAt).startOf('day').format('YYYY-MM-DD') === dateStr
     );
 
-    const revenue = dayOrders.reduce((sum, order) => sum + (order.totalPrice || 0), 0);
+    const revenue = dayOrders.reduce((sum, order) => sum + getOrderTotal(order), 0);
     const profit = dayOrders.reduce((sum, order) => sum + (order.totalProfit || 0), 0);
 
     data.push({ date: dayLabel, dateFormatted: dayLabel, revenue, profit });
@@ -84,10 +135,10 @@ const groupOrdersByDateLast7Days = (orders: Order[]) => {
  * Tính KPI tổng quan từ orders
  */
 const calculateKPIs = (orders: Order[]) => {
-  const completedOrders = orders.filter((order) => order.status === 'COMPLETED');
-  const cancelledOrders = orders.filter((order) => order.status === 'CANCELLED');
+  const completedOrders = orders.filter(isRevenueRecognizedOrder);
+  const cancelledOrders = orders.filter((order) => toStatus(order.status) === 'CANCELLED');
 
-  const totalRevenue = completedOrders.reduce((sum, order) => sum + (order.totalPrice || 0), 0);
+  const totalRevenue = completedOrders.reduce((sum, order) => sum + getOrderTotal(order), 0);
   const totalProfit = completedOrders.reduce((sum, order) => sum + (order.totalProfit || 0), 0);
   const totalOrders = orders.length;
   const cancellationRate = totalOrders > 0 ? (cancelledOrders.length / totalOrders) * 100 : 0;
@@ -104,11 +155,17 @@ const calculateKPIs = (orders: Order[]) => {
  * Tính tỉ trọng trạng thái đơn hàng
  */
 const getOrderStatusDistribution = (orders: Order[]) => {
-  const pending = orders.filter((order) => order.status === 'PENDING').length;
-  const completed = orders.filter((order) => order.status === 'COMPLETED').length;
-  const cancelled = orders.filter((order) => order.status === 'CANCELLED').length;
+  const pending = orders.filter((order) => toStatus(order.status) === 'PENDING').length;
+  const completed = orders.filter(isRevenueRecognizedOrder).length;
+  const returning = orders.filter((order) =>
+    ['RETURN_PENDING', 'RETURN_APPROVED', 'RETURNING', 'REFUNDING'].includes(toStatus(order.status))
+  ).length;
+  const refunded = orders.filter((order) => toStatus(order.status) === 'REFUNDED').length;
+  const cancelled = orders.filter((order) => toStatus(order.status) === 'CANCELLED').length;
 
   return [
+    { name: 'Tr\u1ea3 h\u00e0ng/ho\u00e0n ti\u1ec1n', value: returning, color: '#8b5cf6' },
+    { name: '\u0110\u00e3 ho\u00e0n ti\u1ec1n', value: refunded, color: '#64748b' },
     { name: 'Chờ xử lý', value: pending, color: '#f59e0b' },
     { name: 'Hoàn thành', value: completed, color: '#10b981' },
     { name: 'Hủy đơn', value: cancelled, color: '#ef4444' },
@@ -286,13 +343,13 @@ export default function DashboardPage() {
             title="Tổng Đơn Hàng"
             value={kpis.totalOrders}
             icon={<BarChart3 size={24} />}
-            trend={`${orders.filter((o) => o.status === 'COMPLETED').length} đơn đã hoàn thành`}
+            trend={`${orders.filter(isRevenueRecognizedOrder).length} đơn đã chốt doanh thu`}
           />
           <KPICard
             title="Tỉ lệ Hủy Đơn"
             value={`${kpis.cancellationRate.toFixed(1)}%`}
             icon={<Zap size={24} />}
-            trend={`${orders.filter((o) => o.status === 'CANCELLED').length} đơn bị hủy/bom hàng`}
+            trend={`${orders.filter((o) => toStatus(o.status) === 'CANCELLED').length} đơn bị hủy/bom hàng`}
           />
         </div>
 
