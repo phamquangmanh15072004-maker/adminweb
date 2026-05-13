@@ -9,9 +9,8 @@ import {
   updateDoc,
   doc,
   getDoc,
-  getDocs,
-  where,
-  increment 
+  increment ,
+  setDoc
 } from 'firebase/firestore';
 import {
   Search,
@@ -310,64 +309,59 @@ export default function ChatPage() {
       };
 
       try {
-        const q = query(
-          collection(db, 'channels'),
-          where('userId', '==', urlUserId),
-          where('type', '==', 'SUPPORT')
-        );
-        const querySnapshot = await getDocs(q);
+        const channelId = `SUPPORT_${urlUserId}`;
+        const channelRef = doc(db, 'channels', channelId);
+        
+        const channelSnap = await getDoc(channelRef);
 
-        if (!querySnapshot.empty) {
-          const existingDoc = querySnapshot.docs[0];
+        if (channelSnap.exists()) {
           setSelectedChannel({
-            id: existingDoc.id,
-            ...(existingDoc.data() as Omit<ChatChannel, 'id'>),
+            id: channelId,
+            ...(channelSnap.data() as Omit<ChatChannel, 'id'>),
           });
-          handledUrlUserIdRef.current = urlUserId;
-          return;
-        }
+        } else {
+          const userSnap = await getDoc(doc(db, 'users', urlUserId));
+          let realName = 'Khách hàng';
+          let realAvatar = '';
 
-        const userSnap = await getDoc(doc(db, 'users', urlUserId));
-        let realName = 'Khách hàng';
-        let realAvatar = '';
-
-        if (userSnap.exists()) {
-          const userData = userSnap.data();
-          realName = userData?.name || userData?.email || 'Khách hàng';
-          realAvatar = userData?.avatarUrl || '';
-        }
-
-        const newChannelData = {
-          userId: urlUserId,
-          participants: [urlUserId],
-          userName: realName,
-          userAvatar: realAvatar,
-          receiverId: 'ADMIN',
-          type: 'SUPPORT',
-          status: 'PENDING',
-          lastMessage: 'Bắt đầu hỗ trợ khách hàng',
-          lastUpdated: Date.now(),
-          lastSenderId: 'ADMIN',
-          // 🌟 KHỞI TẠO MAP UNREAD
-          unreadCounts: {
-            'ADMIN': 0,
-            [urlUserId]: 1
+          if (userSnap.exists()) {
+            const userData = userSnap.data();
+            realName = userData?.name || userData?.email || 'Khách hàng';
+            realAvatar = userData?.avatarUrl || '';
           }
-        };
 
-        const channelRef = await addDoc(collection(db, 'channels'), newChannelData);
+          const newChannelData = {
+            id: channelId, // Ép ID
+            userId: urlUserId,
+            participants: [urlUserId],
+            userName: realName,
+            userAvatar: realAvatar,
+            receiverId: 'ADMIN',
+            type: 'SUPPORT',
+            status: 'PENDING',
+            lastMessage: 'Bắt đầu hỗ trợ khách hàng',
+            lastUpdated: Date.now(),
+            lastSenderId: 'ADMIN',
+            unreadCounts: {
+              'ADMIN': 0,
+              [urlUserId]: 1
+            }
+          };
+          await setDoc(channelRef, newChannelData);
 
-        await addDoc(collection(db, 'channels', channelRef.id, 'messages'), {
-          channelId: channelRef.id,
-          senderId: 'SYSTEM',
-          content: 'Hệ thống: Bắt đầu hội thoại hỗ trợ.',
-          timestamp: Date.now(),
-          isAdmin: true,
-          type: 'TEXT',
-          mediaUrl: '',
-        });
+          await addDoc(collection(db, 'channels', channelId, 'messages'), {
+            channelId: channelId,
+            senderId: 'SYSTEM',
+            content: 'Hệ thống: Bắt đầu hội thoại hỗ trợ.',
+            timestamp: Date.now(),
+            isAdmin: true,
+            type: 'TEXT',
+            mediaUrl: '',
+          });
 
-        setSelectedChannel({ id: channelRef.id, ...newChannelData });
+          setSelectedChannel(newChannelData);
+        }
+        
         handledUrlUserIdRef.current = urlUserId;
       } catch (error) {
         console.error('Failed to create/select support channel:', error);
@@ -382,20 +376,13 @@ export default function ChatPage() {
     void checkAndCreateChannel();
   }, [channels, isChannelsLoaded, searchParams, setSearchParams, urlUserId]);
 
-  // 🌟 3. RESET TIN NHẮN CHƯA ĐỌC CỦA ADMIN VỀ 0 KHI MỞ CHAT LÊN
+  // =========================================================================
+  // 🌟 3A. LOAD TIN NHẮN THEO THỜI GIAN THỰC
+  // =========================================================================
   useEffect(() => {
     if (!selectedChannel?.id) {
       setMessages([]);
       return;
-    }
-
-    // Update unread count to 0 for ADMIN
-    try {
-      updateDoc(doc(db, 'channels', selectedChannel.id), {
-        'unreadCounts.ADMIN': 0
-      });
-    } catch (e) {
-      console.error(e);
     }
 
     const messagesQuery = query(collection(db, 'channels', selectedChannel.id, 'messages'));
@@ -410,6 +397,22 @@ export default function ChatPage() {
 
     return () => unsubscribe();
   }, [selectedChannel?.id]);
+
+  // =========================================================================
+  // 🌟 3B. TỰ ĐỘNG DẬP TẮT SỐ ĐỎ KHI ĐANG MỞ ĐÚNG PHÒNG ĐÓ
+  // =========================================================================
+  useEffect(() => {
+    // Nếu đang chọn kênh VÀ kênh đó có tin nhắn chưa đọc của Admin > 0
+    if (selectedChannel?.id && selectedChannel?.unreadCounts?.ADMIN) {
+      if (selectedChannel.unreadCounts.ADMIN > 0) {
+        // Lập tức reset về 0 trên Firebase
+        updateDoc(doc(db, 'channels', selectedChannel.id), {
+          'unreadCounts.ADMIN': 0
+        }).catch((e) => console.error("Lỗi khi reset thông báo đỏ:", e));
+      }
+    }
+  }, [selectedChannel?.id, selectedChannel?.unreadCounts?.ADMIN]); 
+  // 👆 Theo dõi sự thay đổi của biến unreadCounts, hễ nó nhích lên 1 cái là dập về 0 luôn!
 
   useEffect(() => {
     const timer = window.setTimeout(() => {

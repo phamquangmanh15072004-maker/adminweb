@@ -26,7 +26,7 @@ import {
   KanbanSquare,
   AlertTriangle,
 } from 'lucide-react';
-import { collection, doc, getDocs, limit, onSnapshot, orderBy, query, setDoc, updateDoc, where, increment, writeBatch } from 'firebase/firestore';
+import { collection, doc, getDocs, limit, onSnapshot, orderBy, query, setDoc, updateDoc, where, increment, writeBatch,getDoc } from 'firebase/firestore';
 import toast from 'react-hot-toast';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { db } from '../../firebase';
@@ -636,50 +636,55 @@ export default function OrdersPage() {
       }
 
       const now = Date.now();
-      const supportQuery = query(
-        collection(db, 'channels'),
-        where('userId', '==', targetOrder.userId),
-        where('type', '==', 'SUPPORT'),
-        limit(1)
-      );
-      const supportSnap = await getDocs(supportQuery);
+      const channelId = `SUPPORT_${targetOrder.userId}`;
+      const channelRef = doc(db, 'channels', channelId);
+      
+      const snap = await getDoc(channelRef);
 
-      let channelRef = doc(collection(db, 'channels'));
-      if (supportSnap.empty) {
+      if (!snap.exists()) {
+        // 🌟 NÂNG CẤP: Truy xuất bảng users để lấy Avatar mới nhất
+        const userSnap = await getDoc(doc(db, 'users', targetOrder.userId));
+        let realAvatar = targetOrder.userAvatar || '';
+        if (userSnap.exists()) {
+          const userData = userSnap.data();
+          if (userData?.avatarUrl) realAvatar = userData.avatarUrl;
+        }
+
         await setDoc(channelRef, {
-          id: channelRef.id,
+          id: channelId,
           participants: [targetOrder.userId],
           userId: targetOrder.userId,
           userName: targetOrder.userName || targetOrder.customerName || targetOrder.fullName || getName(targetOrder),
-          userAvatar: targetOrder.userAvatar || '',
+          userAvatar: realAvatar, // 🌟 Gán Avatar xịn vào đây
           receiverId: 'ADMIN',
           receiverName: 'Hỗ trợ Shop',
-          lastMessage: '',
+          lastMessage: message,
           lastUpdated: now,
           status: 'ACTIVE',
           type: 'SUPPORT',
           lastSenderId: 'ADMIN',
+          unreadCounts: { 'ADMIN': 0, [targetOrder.userId]: 1 }
         });
       } else {
-        channelRef = doc(db, 'channels', supportSnap.docs[0].id);
+        await updateDoc(channelRef, {
+          lastMessage: message,
+          lastSenderId: 'ADMIN',
+          lastUpdated: now,
+          status: 'ACTIVE',
+          type: 'SUPPORT',
+          [`unreadCounts.${targetOrder.userId}`]: increment(1)
+        });
       }
+
       const messageRef = doc(collection(channelRef, 'messages'));
       await setDoc(messageRef, {
         id: messageRef.id,
-        channelId: channelRef.id,
+        channelId: channelId,
         senderId: 'ADMIN',
         content: message,
         timestamp: now,
         isAdmin: true,
         type: 'TEXT',
-      });
-
-      await updateDoc(channelRef, {
-        lastMessage: message,
-        lastSenderId: 'ADMIN',
-        lastUpdated: now,
-        status: 'ACTIVE',
-        type: 'SUPPORT',
       });
     };
 
@@ -854,7 +859,6 @@ export default function OrdersPage() {
       const supportQuery = query(
         collection(db, 'channels'),
         where('userId', '==', targetOrder.userId),
-        where('type', '==', 'SUPPORT'),
         limit(1)
       );
       const supportSnap = await getDocs(supportQuery);
@@ -949,7 +953,6 @@ export default function OrdersPage() {
       setIsSubmittingRefund(false);
     }
   };
-// 🌟 HÀM MỚI: CHUYỂN SANG TRANG CHAT VÀ ĐIỀN SẴN TEXT
   const handleChatWithUser = async (order: OrderRecord) => {
     if (!order.userId) {
       toast.error('Đơn hàng này không có tài khoản người dùng liên kết!');
@@ -959,20 +962,25 @@ export default function OrdersPage() {
     setIsProcessingId('chat_' + order.id);
     try {
       const now = Date.now();
-      const supportQuery = query(collection(db, 'channels'), where('userId', '==', order.userId), where('type', '==', 'SUPPORT'), limit(1));
-      const supportSnap = await getDocs(supportQuery);
-      
-      let channelId = '';
+      const channelId = `SUPPORT_${order.userId}`;
+      const channelRef = doc(db, 'channels', channelId);
+      const snap = await getDoc(channelRef);
 
-      if (supportSnap.empty) {
-        const channelRef = doc(collection(db, 'channels'));
-        channelId = channelRef.id;
+      if (!snap.exists()) {
+        // 🌟 NÂNG CẤP: Truy xuất bảng users để lấy Avatar mới nhất
+        const userSnap = await getDoc(doc(db, 'users', order.userId));
+        let realAvatar = order.userAvatar || '';
+        if (userSnap.exists()) {
+          const userData = userSnap.data();
+          if (userData?.avatarUrl) realAvatar = userData.avatarUrl;
+        }
+
         await setDoc(channelRef, {
           id: channelId,
           participants: [order.userId],
           userId: order.userId,
           userName: getName(order),
-          userAvatar: order.userAvatar || '',
+          userAvatar: realAvatar, // 🌟 Gán Avatar xịn vào đây
           receiverId: 'ADMIN',
           receiverName: 'Hỗ trợ Shop',
           lastMessage: '',
@@ -980,14 +988,13 @@ export default function OrdersPage() {
           status: 'ACTIVE',
           type: 'SUPPORT',
           lastSenderId: 'ADMIN',
+          unreadCounts: { 'ADMIN': 0, [order.userId]: 0 }
         });
-      } else {
-        channelId = supportSnap.docs[0].id;
       }
 
       const itemsText = getItems(order).map(item => `- ${item.quantity || 1}x ${getItemName(item)}`).join('\n');
       const prefillText = `Chào bạn, Shop liên hệ về đơn hàng #${order.id.slice(-6).toUpperCase()}:\n${itemsText}\n\n`;
-      navigate(`/chat`, { state: { activeChannelId: channelId, prefillText: prefillText } });
+      navigate(`/chat?id=${channelId}`, { state: { activeChannelId: channelId, prefillText: prefillText } });
 
     } catch (error) {
       console.error(error);
