@@ -1,10 +1,26 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
-import { Bell, CheckCheck, Filter, Inbox, Loader2, Search, Package, ShoppingCart, Settings2, CircleDot } from 'lucide-react';
+import {
+  Bell,
+  CheckCheck,
+  Filter,
+  Inbox,
+  Loader2,
+  Search,
+  Package,
+  ShoppingCart,
+  Settings2,
+  CircleDot,
+  ChevronsLeft,
+  ChevronLeft,
+  ChevronRight,
+  ChevronsRight,
+} from 'lucide-react';
 import { arrayUnion, collection, doc, onSnapshot, orderBy, query, updateDoc, where } from 'firebase/firestore';
 import { useNavigate } from 'react-router-dom';
 import { db } from '../../firebase';
 import { useAuth } from '../../hooks/useAuth';
 import toast from 'react-hot-toast';
+import { getNotificationRoute } from '../../utils/notificationRouting';
 
 type NotificationType = 'ORDER' | 'INVENTORY' | 'CHAT' | 'SYSTEM' | 'PROMO' | string;
 
@@ -14,12 +30,18 @@ type NotificationItem = {
   message: string;
   type?: NotificationType;
   targetId?: string;
+  orderId?: string;
+  productId?: string;
+  userId?: string;
+  channelId?: string;
+  action?: string;
   targetRoles: string[];
   readBy: string[];
   createdAt: number;
 };
 
 type FilterType = 'ALL' | 'ORDER' | 'INVENTORY' | 'SYSTEM';
+const PAGE_SIZE = 8;
 
 const TAB_OPTIONS: Array<{ value: FilterType; label: string; icon: ReactNode }> = [
   { value: 'ALL', label: 'Tất cả', icon: <Filter className="w-4 h-4" /> },
@@ -46,11 +68,18 @@ const isUnreadForUser = (notification: NotificationItem, userId: string) => !not
 const getTypeBadgeClasses = (type?: NotificationType) => {
   switch (String(type || '').toUpperCase()) {
     case 'ORDER':
+    case 'ORDER_UPDATE':
       return 'bg-emerald-100 text-emerald-700';
     case 'INVENTORY':
+    case 'PRODUCT':
       return 'bg-orange-100 text-orange-700';
     case 'CHAT':
+    case 'CHAT_MESSAGE':
       return 'bg-blue-100 text-blue-700';
+    case 'PROMO':
+      return 'bg-fuchsia-100 text-fuchsia-700';
+    case 'REVIEW':
+      return 'bg-amber-100 text-amber-700';
     case 'SYSTEM':
     default:
       return 'bg-slate-100 text-slate-600';
@@ -64,6 +93,7 @@ export default function NotificationsPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [activeFilter, setActiveFilter] = useState<FilterType>('ALL');
   const [searchTerm, setSearchTerm] = useState('');
+  const [currentPage, setCurrentPage] = useState(1);
 
   const currentUserId = String(currentUser?.uid || '').trim();
   const currentUserRole = String(currentUser?.role || '').toUpperCase();
@@ -93,6 +123,11 @@ export default function NotificationsPage() {
             message: String(data.message || ''),
             type: String(data.type || '').trim() || undefined,
             targetId: String(data.targetId || '').trim() || undefined,
+            orderId: String(data.orderId || '').trim() || undefined,
+            productId: String(data.productId || '').trim() || undefined,
+            userId: String(data.userId || '').trim() || undefined,
+            channelId: String(data.channelId || '').trim() || undefined,
+            action: String(data.action || '').trim() || undefined,
             targetRoles: Array.isArray(data.targetRoles) ? data.targetRoles.map((role: any) => String(role)) : [],
             readBy: Array.isArray(data.readBy) ? data.readBy.map((value: any) => String(value)) : [],
             createdAt: Number(data.createdAt || 0),
@@ -119,8 +154,8 @@ export default function NotificationsPage() {
       const type = String(notification.type || '').toUpperCase();
       const matchType =
         activeFilter === 'ALL' ||
-        (activeFilter === 'ORDER' && type === 'ORDER') ||
-        (activeFilter === 'INVENTORY' && type === 'INVENTORY') ||
+        (activeFilter === 'ORDER' && (type === 'ORDER' || type === 'ORDER_UPDATE')) ||
+        (activeFilter === 'INVENTORY' && (type === 'INVENTORY' || type === 'PRODUCT')) ||
         (activeFilter === 'SYSTEM' && type === 'SYSTEM') ||
         (activeFilter === 'SYSTEM' && type === 'PROMO');
 
@@ -135,6 +170,19 @@ export default function NotificationsPage() {
     return notifications.filter((notification) => isUnreadForUser(notification, currentUserId)).length;
   }, [currentUserId, notifications]);
 
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [activeFilter, searchTerm]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredNotifications.length / PAGE_SIZE));
+  const safePage = Math.min(currentPage, totalPages);
+  const pageStart = filteredNotifications.length === 0 ? 0 : (safePage - 1) * PAGE_SIZE + 1;
+  const pageEnd = Math.min(safePage * PAGE_SIZE, filteredNotifications.length);
+  const pageNotifications = useMemo(() => {
+    const start = (safePage - 1) * PAGE_SIZE;
+    return filteredNotifications.slice(start, start + PAGE_SIZE);
+  }, [filteredNotifications, safePage]);
+
   const handleMarkAsRead = async (notificationId: string) => {
     if (!currentUserId) return;
     await updateDoc(doc(db, 'notifications', notificationId), {
@@ -145,18 +193,9 @@ export default function NotificationsPage() {
   const handleNotificationClick = (notification: NotificationItem) => {
     void handleMarkAsRead(notification.id);
 
-    switch (notification.type) {
-      case 'ORDER':
-        navigate(notification.targetId ? `/orders?search=${notification.targetId}` : '/orders');
-        break;
-      case 'INVENTORY':
-        navigate(notification.targetId ? `/products?search=${notification.targetId}` : '/products');
-        break;
-      case 'CHAT':
-        navigate(notification.targetId ? `/chat?userId=${notification.targetId}` : '/chat');
-        break;
-      default:
-        break;
+    const nextRoute = getNotificationRoute(notification);
+    if (nextRoute) {
+      navigate(nextRoute);
     }
   };
 
@@ -271,7 +310,7 @@ export default function NotificationsPage() {
               </div>
             ) : (
               <div className="space-y-3">
-                {filteredNotifications.map((notification) => {
+                {pageNotifications.map((notification) => {
                   const unread = isUnreadForUser(notification, currentUserId);
                   const typeBadgeClasses = getTypeBadgeClasses(notification.type);
                   return (
@@ -314,6 +353,55 @@ export default function NotificationsPage() {
               </div>
             )}
           </div>
+
+          {filteredNotifications.length > 0 && (
+            <div className="border-t border-slate-100 bg-slate-50/80 px-4 sm:px-6 py-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <p className="text-xs font-bold text-slate-500">
+                Hiển thị {pageStart}-{pageEnd} / {filteredNotifications.length} thông báo
+              </p>
+              <div className="flex items-center justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setCurrentPage(1)}
+                  disabled={safePage === 1}
+                  className="h-9 w-9 inline-grid place-items-center rounded-xl border border-slate-200 bg-white text-slate-600 hover:bg-blue-50 hover:text-blue-700 disabled:opacity-40 disabled:hover:bg-white disabled:hover:text-slate-600 transition-colors"
+                  title="Trang đầu"
+                >
+                  <ChevronsLeft className="w-4 h-4" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setCurrentPage((page) => Math.max(1, page - 1))}
+                  disabled={safePage === 1}
+                  className="h-9 w-9 inline-grid place-items-center rounded-xl border border-slate-200 bg-white text-slate-600 hover:bg-blue-50 hover:text-blue-700 disabled:opacity-40 disabled:hover:bg-white disabled:hover:text-slate-600 transition-colors"
+                  title="Trang trước"
+                >
+                  <ChevronLeft className="w-4 h-4" />
+                </button>
+                <span className="min-w-20 text-center rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-black text-slate-700">
+                  {safePage}/{totalPages}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setCurrentPage((page) => Math.min(totalPages, page + 1))}
+                  disabled={safePage === totalPages}
+                  className="h-9 w-9 inline-grid place-items-center rounded-xl border border-slate-200 bg-white text-slate-600 hover:bg-blue-50 hover:text-blue-700 disabled:opacity-40 disabled:hover:bg-white disabled:hover:text-slate-600 transition-colors"
+                  title="Trang sau"
+                >
+                  <ChevronRight className="w-4 h-4" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setCurrentPage(totalPages)}
+                  disabled={safePage === totalPages}
+                  className="h-9 w-9 inline-grid place-items-center rounded-xl border border-slate-200 bg-white text-slate-600 hover:bg-blue-50 hover:text-blue-700 disabled:opacity-40 disabled:hover:bg-white disabled:hover:text-slate-600 transition-colors"
+                  title="Trang cuối"
+                >
+                  <ChevronsRight className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+          )}
         </section>
       </div>
     </div>

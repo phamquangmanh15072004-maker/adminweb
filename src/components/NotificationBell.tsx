@@ -3,7 +3,8 @@ import { useEffect, useRef, useState } from 'react';
 import { arrayUnion, collection, doc, onSnapshot, orderBy, query, updateDoc, where } from 'firebase/firestore';
 import { db } from '../firebase';
 import { toast } from 'react-hot-toast';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
+import { getNotificationRoute } from '../utils/notificationRouting';
 
 interface Notification {
   id: string;
@@ -12,9 +13,13 @@ interface Notification {
   targetRoles: string[];
   type?: string;
   targetId?: string;
+  orderId?: string;
+  productId?: string;
+  userId?: string;
+  channelId?: string;
+  action?: string;
   readBy: string[];
   createdAt: number;
-  userId?: string;
 }
 
 interface NotificationBellProps {
@@ -42,15 +47,30 @@ function getRelativeTime(timestamp: number): string {
   return date.toLocaleDateString('vi-VN');
 }
 
+const getDocumentTitleForPath = (pathname: string) => {
+  if (pathname.startsWith('/products/new')) return 'Tạo sản phẩm mới - Gunpla Store';
+  if (pathname.startsWith('/products/')) return 'Chi tiết sản phẩm - Gunpla Store';
+  if (pathname.startsWith('/products')) return 'Quản lý Sản Phẩm - Gunpla Store';
+  if (pathname.startsWith('/orders')) return 'Quản lý Đơn hàng - Gunpla Store';
+  if (pathname.startsWith('/chat')) return 'Chăm Sóc Khách Hàng - Gunpla Store';
+  if (pathname.startsWith('/users')) return 'Quản lý Người Dùng - Gunpla Store';
+  if (pathname.startsWith('/notifications')) return 'Thông Báo - Gunpla Store';
+  if (pathname.startsWith('/posts')) return 'Quản lý Bài Viết - Gunpla Store';
+  if (pathname.startsWith('/vouchers')) return 'Quản lý Khuyến mãi - Gunpla Store';
+  if (pathname.startsWith('/reviews')) return 'Quản lý Đánh giá - Gunpla Store';
+  if (pathname.startsWith('/stats')) return 'Trang Chủ Thống Kê - Gunpla Store';
+  return 'Gunpla Store';
+};
+
 export default function NotificationBell({ currentUserRole, currentUserId }: NotificationBellProps) {
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [isOpen, setIsOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const notificationRef = useRef<HTMLDivElement | null>(null);
   const navigate = useNavigate();
+  const location = useLocation();
   const previousUnreadCount = useRef(0);
   const hasInitializedUnread = useRef(false);
-  const defaultDocumentTitle = useRef(typeof document !== 'undefined' ? document.title : 'Gunpla Store');
 
   const normalizedUserId = String(currentUserId || '').trim();
 
@@ -92,9 +112,13 @@ export default function NotificationBell({ currentUserRole, currentUserId }: Not
               targetRoles: Array.isArray(rawData.targetRoles) ? rawData.targetRoles : [],
               type: String(rawData.type || '').trim() || undefined,
               targetId: rawData.targetId ? String(rawData.targetId).trim() : undefined,
+              orderId: rawData.orderId ? String(rawData.orderId).trim() : undefined,
+              productId: rawData.productId ? String(rawData.productId).trim() : undefined,
+              userId: rawData.userId ? String(rawData.userId).trim() : undefined,
+              channelId: rawData.channelId ? String(rawData.channelId).trim() : undefined,
+              action: rawData.action ? String(rawData.action).trim() : undefined,
               readBy: Array.isArray(rawData.readBy) ? rawData.readBy.map((value: any) => String(value)) : [],
               createdAt: Number(rawData.createdAt || 0),
-              userId: rawData.userId ? String(rawData.userId) : undefined,
             });
           });
 
@@ -150,11 +174,11 @@ export default function NotificationBell({ currentUserRole, currentUserId }: Not
     }
 
     if (unreadCount === 0) {
-      document.title = defaultDocumentTitle.current;
+      document.title = getDocumentTitleForPath(location.pathname);
     }
 
     previousUnreadCount.current = unreadCount;
-  }, [unreadCount]);
+  }, [location.pathname, unreadCount]);
 
   // ============================================================================
   // 3️⃣ XỬ LÝ CLICK VÀO THÔNG BÁO CHƯA ĐỌC - CẬP NHẬT FIRESTORE
@@ -181,26 +205,12 @@ export default function NotificationBell({ currentUserRole, currentUserId }: Not
     }
   };
 
-  const getNotificationRoute = (type?: string, targetId?: string) => {
-    const normalizedType = String(type || '').toUpperCase();
-    if (normalizedType === 'ORDER' || normalizedType === 'ORDER_UPDATE') {
-      return targetId ? `/orders?search=${targetId}` : '/orders';
-    }
-    if (normalizedType === 'INVENTORY') {
-      return targetId ? `/products?search=${targetId}` : '/products';
-    }
-    if (normalizedType === 'CHAT') {
-      return targetId ? `/chat?userId=${targetId}` : '/chat';
-    }
-    return null;
-  };
-
   const handleNotificationClick = async (notification: Notification) => {
     const isCurrentlyRead = notification.readBy.includes(normalizedUserId);
     void handleMarkAsRead(notification.id, isCurrentlyRead);
     setIsOpen(false);
 
-    const nextRoute = getNotificationRoute(notification.type, notification.targetId);
+    const nextRoute = getNotificationRoute(notification);
     if (nextRoute) {
       navigate(nextRoute);
     }

@@ -25,7 +25,7 @@ dayjs.extend(relativeTime);
 dayjs.locale('vi');
 
 type PostStatus = 'PENDING' | 'APPROVED' | 'REJECTED' | 'HIDDEN';
-type PostTab = 'PENDING' | 'APPROVED' | 'REJECTED' | 'ALL';
+type PostTab = 'PENDING' | 'APPROVED' | 'REJECTED' | 'HIDDEN' | 'ALL';
 type GradeFilter = 'ALL' | 'HG' | 'RG' | 'MG' | 'PG' | 'SD' | 'MB' | 'OTHER';
 type ConditionFilter = 'ALL' | 'NEW' | 'LIKE NEW' | 'USED' | 'JUNK';
 
@@ -52,6 +52,7 @@ const tabs: Array<{ id: PostTab; label: string }> = [
   { id: 'PENDING', label: 'Chờ duyệt' },
   { id: 'APPROVED', label: 'Đã đăng' },
   { id: 'REJECTED', label: 'Bị từ chối' },
+  { id: 'HIDDEN', label: 'Đã ẩn' },
   { id: 'ALL', label: 'Tất cả' },
 ];
 
@@ -75,6 +76,45 @@ const statusMeta: Record<PostStatus, { label: string; className: string }> = {
   APPROVED: { label: 'Đã đăng', className: 'bg-emerald-100 text-emerald-700 ring-1 ring-emerald-200' },
   REJECTED: { label: 'Từ chối', className: 'bg-rose-100 text-rose-700 ring-1 ring-rose-200' },
   HIDDEN: { label: 'Đã ẩn', className: 'bg-slate-100 text-slate-700 ring-1 ring-slate-200' },
+};
+
+const normalizePostStatus = (value?: string): PostStatus => {
+  const status = String(value || '').toUpperCase();
+  if (status === 'APPROVED' || status === 'REJECTED' || status === 'HIDDEN') return status;
+  return 'PENDING';
+};
+
+const normalizeGrade = (value?: string) => {
+  const grade = String(value || 'OTHER').trim().toUpperCase();
+  return ['HG', 'RG', 'MG', 'PG', 'SD', 'MB'].includes(grade) ? grade : 'OTHER';
+};
+
+const normalizeCondition = (value?: string) => {
+  const condition = String(value || 'USED').trim().toUpperCase();
+  return condition === 'NEW' || condition === 'LIKE NEW' || condition === 'USED' || condition === 'JUNK'
+    ? condition
+    : 'USED';
+};
+
+const toNumber = (value: unknown, fallback = 0) => {
+  if (typeof value === 'number') return Number.isFinite(value) ? value : fallback;
+  const parsed = Number(String(value || '').replace(/[^\d.-]/g, ''));
+  return Number.isFinite(parsed) ? parsed : fallback;
+};
+
+const toMillis = (value: any, fallback = Date.now()) => {
+  if (!value) return fallback;
+  if (typeof value === 'number') return Number.isFinite(value) ? value : fallback;
+  if (typeof value?.toDate === 'function') return value.toDate().getTime();
+  const parsed = new Date(value).getTime();
+  return Number.isFinite(parsed) ? parsed : fallback;
+};
+
+const getPostImages = (raw: any) => {
+  const candidates = raw.images || raw.imageUrls || raw.photoUrls || raw.photos;
+  if (Array.isArray(candidates)) return candidates.map((image) => String(image || '').trim()).filter(Boolean);
+  const singleImage = String(raw.imageUrl || raw.thumbnailUrl || '').trim();
+  return singleImage ? [singleImage] : [];
 };
 
 function ImagePreviewModal({
@@ -443,22 +483,22 @@ export default function PostsPage() {
       postsQuery,
       (snapshot) => {
         const data: PostRecord[] = snapshot.docs.map((item) => {
-          const raw = item.data() as Partial<PostRecord>;
+          const raw = item.data() as any;
           return {
             id: item.id,
-            userId: raw.userId,
-            userName: raw.userName || 'Người dùng ẩn danh',
-            userAvatar: raw.userAvatar || '',
-            title: raw.title || '',
-            content: raw.content || '',
-            price: Number(raw.price || 0),
-            images: Array.isArray(raw.images) ? raw.images.filter(Boolean) : [],
-            condition: String(raw.condition || 'USED').toUpperCase(),
-            grade: String(raw.grade || 'N/A').toUpperCase(),
-            status: (raw.status || 'PENDING') as PostStatus,
-            rejectionReason: raw.rejectionReason || '',
-            createdAt: Number(raw.createdAt || Date.now()),
-            processedAt: Number(raw.processedAt || 0),
+            userId: raw.userId ? String(raw.userId) : undefined,
+            userName: String(raw.userName || raw.authorName || raw.displayName || 'Người dùng ẩn danh'),
+            userAvatar: String(raw.userAvatar || raw.authorAvatar || raw.avatarUrl || ''),
+            title: String(raw.title || raw.name || ''),
+            content: String(raw.content || raw.description || ''),
+            price: toNumber(raw.price),
+            images: getPostImages(raw),
+            condition: normalizeCondition(raw.condition),
+            grade: normalizeGrade(raw.grade),
+            status: normalizePostStatus(raw.status),
+            rejectionReason: String(raw.rejectionReason || ''),
+            createdAt: toMillis(raw.createdAt),
+            processedAt: toMillis(raw.processedAt, 0),
           };
         });
 
@@ -478,7 +518,10 @@ export default function PostsPage() {
   const normalizedPosts = useMemo(() => {
     return posts.map((post) => ({
       ...post,
-      _searchText: [post.title, post.content, post.userName].filter(Boolean).join(' ').toLowerCase(),
+      _searchText: [post.title, post.content, post.userName, post.grade, post.condition]
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase(),
     }));
   }, [posts]);
 
@@ -501,10 +544,11 @@ export default function PostsPage() {
         if (post.status === 'PENDING') acc.PENDING += 1;
         if (post.status === 'APPROVED') acc.APPROVED += 1;
         if (post.status === 'REJECTED') acc.REJECTED += 1;
+        if (post.status === 'HIDDEN') acc.HIDDEN += 1;
         acc.ALL += 1;
         return acc;
       },
-      { PENDING: 0, APPROVED: 0, REJECTED: 0, ALL: 0 }
+      { PENDING: 0, APPROVED: 0, REJECTED: 0, HIDDEN: 0, ALL: 0 }
     );
   }, [posts]);
 

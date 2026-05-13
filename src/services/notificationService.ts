@@ -39,6 +39,9 @@ export async function notifyNewOrder(orderId: string, customerName: string) {
     await addDoc(collection(db, 'notifications'), {
       title: `Đơn hàng mới #${orderId}`,
       message: `Khách hàng ${customerName} vừa tạo đơn, cần xác nhận trong 15 phút.`,
+      type: 'ORDER',
+      targetId: orderId,
+      orderId,
       targetRoles: ['ADMIN', 'INVENTORY'],
       readBy: [],
       createdAt: Date.now(),
@@ -52,11 +55,14 @@ export async function notifyNewOrder(orderId: string, customerName: string) {
 // ============================================================================
 // 2. THÔNG BÁO SẢN PHẨM SẮP HẾT KHOÁ
 // ============================================================================
-export async function notifyLowStock(productName: string, currentStock: number) {
+export async function notifyLowStock(productName: string, currentStock: number, productId?: string) {
   try {
     await addDoc(collection(db, 'notifications'), {
       title: 'Sản phẩm sắp hết kho',
       message: `${productName} còn dưới ${currentStock} sản phẩm.`,
+      type: 'INVENTORY',
+      targetId: productId || productName,
+      productId: productId || null,
       targetRoles: ['ADMIN', 'INVENTORY', 'STAFF'],
       readBy: [],
       createdAt: Date.now(),
@@ -74,6 +80,9 @@ export async function notifyPaymentSuccess(orderId: string, amount: number) {
     await addDoc(collection(db, 'notifications'), {
       title: `Thanh toán thành công #${orderId}`,
       message: `Khách hàng thanh toán ${amount.toLocaleString('vi-VN')}đ. Đơn đã xác nhận và sẵn sàng vận chuyển.`,
+      type: 'ORDER',
+      targetId: orderId,
+      orderId,
       targetRoles: ['ADMIN', 'INVENTORY'],
       readBy: [],
       createdAt: Date.now(),
@@ -91,6 +100,9 @@ export async function notifyOrderShipped(orderId: string, trackingNumber: string
     await addDoc(collection(db, 'notifications'), {
       title: `Đơn hàng #${orderId} đã giao hàng`,
       message: `Mã vận chuyển: ${trackingNumber}. Khách hàng sẽ nhận được thông báo.`,
+      type: 'ORDER',
+      targetId: orderId,
+      orderId,
       targetRoles: ['ADMIN', 'INVENTORY', 'STAFF'],
       readBy: [],
       createdAt: Date.now(),
@@ -105,7 +117,8 @@ export async function notifyOrderShipped(orderId: string, trackingNumber: string
 // ============================================================================
 export async function notifyCustomerSupport(
   customerName: string,
-  issueType: 'return' | 'complaint' | 'inquiry' | 'other'
+  issueType: 'return' | 'complaint' | 'inquiry' | 'other',
+  userId?: string
 ) {
   const issueTypeLabel = {
     return: 'Yêu cầu trả hàng',
@@ -118,6 +131,9 @@ export async function notifyCustomerSupport(
     await addDoc(collection(db, 'notifications'), {
       title: `${issueTypeLabel[issueType]} từ ${customerName}`,
       message: `Khách hàng ${customerName} có ${issueTypeLabel[issueType].toLowerCase()}. Vui lòng kiểm tra sớm.`,
+      type: 'CHAT',
+      targetId: userId || null,
+      userId: userId || null,
       targetRoles: ['ADMIN', 'STAFF'],
       readBy: [],
       createdAt: Date.now(),
@@ -141,6 +157,7 @@ export async function notifySystemAlert(title: string, message: string, severity
     await addDoc(collection(db, 'notifications'), {
       title,
       message,
+      type: 'SYSTEM',
       targetRoles: rolesByPriority[severity],
       readBy: [],
       createdAt: Date.now(),
@@ -158,6 +175,7 @@ export async function notifyRoleChanged(userName: string, oldRole: string, newRo
     await addDoc(collection(db, 'notifications'), {
       title: `Quyền hạn ${userName} đã thay đổi`,
       message: `${changedByAdmin} đã thay đổi quyền từ ${oldRole} → ${newRole}. Tài khoản sẽ được đăng xuất để cập nhật quyền.`,
+      type: 'SYSTEM',
       targetRoles: ['ADMIN'],
       readBy: [],
       createdAt: Date.now(),
@@ -175,6 +193,7 @@ export async function notifyPromotionStarted(promotionName: string, discount: nu
     await addDoc(collection(db, 'notifications'), {
       title: `Khuyến mãi ${promotionName} đã bắt đầu`,
       message: `Giảm giá đến ${discount}%. Kết thúc vào ${endTime.toLocaleDateString('vi-VN', { hour: '2-digit', minute: '2-digit' })}`,
+      type: 'PROMO',
       targetRoles: ['ADMIN', 'INVENTORY', 'STAFF'],
       readBy: [],
       createdAt: Date.now(),
@@ -187,11 +206,14 @@ export async function notifyPromotionStarted(promotionName: string, discount: nu
 // ============================================================================
 // 9. THÔNG BÁO ĐÁNH GIÁ SẢN PHẨM MỚI
 // ============================================================================
-export async function notifyNewReview(productName: string, customerName: string, rating: number) {
+export async function notifyNewReview(productName: string, customerName: string, rating: number, reviewId?: string, productId?: string) {
   try {
     await addDoc(collection(db, 'notifications'), {
       title: `Đánh giá mới cho ${productName}`,
       message: `${customerName} đã đánh giá ${rating} ⭐. Hãy kiểm tra nội dung đánh giá.`,
+      type: 'REVIEW',
+      targetId: reviewId || productId || null,
+      productId: productId || null,
       targetRoles: ['ADMIN', 'INVENTORY'],
       readBy: [],
       createdAt: Date.now(),
@@ -204,11 +226,18 @@ export async function notifyNewReview(productName: string, customerName: string,
 // ============================================================================
 // 10. THÔNG BÁO CHUNG (Custom)
 // ============================================================================
-export async function createCustomNotification(title: string, message: string, targetRoles: string[] = ['ADMIN']) {
+export async function createCustomNotification(
+  title: string,
+  message: string,
+  targetRoles: string[] = ['ADMIN'],
+  options: { type?: string; targetId?: string; orderId?: string; productId?: string; userId?: string; channelId?: string; action?: string } = {}
+) {
   try {
+    const cleanOptions = Object.fromEntries(Object.entries(options).filter(([, value]) => value !== undefined && value !== ''));
     await addDoc(collection(db, 'notifications'), {
       title,
       message,
+      ...cleanOptions,
       targetRoles: targetRoles.map((role) => role.toUpperCase()),
       readBy: [],
       createdAt: Date.now(),

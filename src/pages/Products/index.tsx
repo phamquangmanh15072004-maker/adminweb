@@ -4,7 +4,7 @@ import { subscribeProducts, updateProductStatus } from '../../services/productSe
 import { doc, deleteDoc, writeBatch, increment } from 'firebase/firestore';
 import { db } from '../../firebase'; 
 import toast from 'react-hot-toast';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import ProductTable from './ProductTable'; 
 import Papa from 'papaparse'; // 🌟 THƯ VIỆN ĐỌC CSV
 import { useAuth } from '../../hooks/useAuth';
@@ -14,6 +14,7 @@ export default function ProductsPage() {
   const baseCategories = ['HG', 'RG', 'MG', 'PG', 'SD', 'ACCESSORY', 'TOOL', 'Khác'];
 
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const { currentUser } = useAuth();
   const [products, setProducts] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -26,6 +27,7 @@ export default function ProductsPage() {
   const [priceSort, setPriceSort] = useState<'NONE' | 'ASC' | 'DESC'>('NONE');
   const [only3D, setOnly3D] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
+  const searchFromUrl = searchParams.get('search');
 
   // STATE XÓA
   const [deletingId, setDeletingId] = useState<string | null>(null);
@@ -53,6 +55,14 @@ export default function ProductsPage() {
     });
     return () => unsub();
   }, []);
+
+  useEffect(() => {
+    if (!searchFromUrl) return;
+    setSearchTerm(searchFromUrl);
+    const nextParams = new URLSearchParams(searchParams);
+    nextParams.delete('search');
+    setSearchParams(nextParams, { replace: true });
+  }, [searchFromUrl, searchParams, setSearchParams]);
 
   const normalizeCategory = (value?: string) => {
     const normalized = (value || '').trim().toUpperCase();
@@ -127,7 +137,8 @@ export default function ProductsPage() {
         await createCustomNotification(
           'Xóa sản phẩm',
           `Sản phẩm ${name} vừa bị xóa bởi ${currentUser?.name || 'Tài khoản hiện tại'}`,
-          ['ADMIN']
+          ['ADMIN'],
+          { type: 'INVENTORY', targetId: id, productId: id }
         );
         await deleteDoc(doc(db, "products", id));
         toast.success(`Đã xóa: ${name.substring(0, 15)}...`);
@@ -223,7 +234,7 @@ export default function ProductsPage() {
         try {
           const batch = writeBatch(db);
           let successCount = 0;
-          const lowStockProducts: Array<{ productName: string; stock: number }> = [];
+          const lowStockProducts: Array<{ productName: string; stock: number; productId: string }> = [];
           const errorLogs: string[] = []; // Sổ ghi lỗi
 
           results.data.forEach((row: any, index: number) => {
@@ -285,7 +296,7 @@ export default function ProductsPage() {
               successCount++;
 
               if (stockToAdd <= 5) {
-                lowStockProducts.push({ productName: name, stock: stockToAdd });
+                lowStockProducts.push({ productName: name, stock: stockToAdd, productId: sku });
               }
               
             } catch (validationError: any) {
@@ -301,7 +312,7 @@ export default function ProductsPage() {
           if (successCount > 0) {
              await batch.commit(); 
              await Promise.all(
-              lowStockProducts.map((product) => notifyLowStock(product.productName, product.stock))
+              lowStockProducts.map((product) => notifyLowStock(product.productName, product.stock, product.productId))
              );
           }
           

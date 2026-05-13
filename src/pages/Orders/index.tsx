@@ -267,6 +267,7 @@ export default function OrdersPage() {
   });
   const [goToPageInput, setGoToPageInput] = useState('1');
   const refundIdFromUrl = searchParams.get('refundId');
+  const orderIdFromUrl = searchParams.get('orderId');
   const searchFromUrl = searchParams.get('search');
 
   useEffect(() => {
@@ -386,6 +387,26 @@ export default function OrdersPage() {
     nextParams.delete('refundId');
     setSearchParams(nextParams, { replace: true });
   }, [isLoading, refundIdFromUrl, orders, refundDialog, searchParams, setSearchParams]);
+
+  useEffect(() => {
+    if (isLoading || !orderIdFromUrl) return;
+
+    const normalizedOrderId = normalizeText(orderIdFromUrl);
+    const orderFromUrl = orders.find((order) => {
+      const normalizedId = normalizeText(order.id);
+      return normalizedId === normalizedOrderId || normalizedId.endsWith(normalizedOrderId);
+    });
+
+    setSearchInput(orderIdFromUrl);
+    setSearchTerm(orderIdFromUrl);
+    if (orderFromUrl) {
+      setSelectedOrder(orderFromUrl);
+    }
+
+    const nextParams = new URLSearchParams(searchParams);
+    nextParams.delete('orderId');
+    setSearchParams(nextParams, { replace: true });
+  }, [isLoading, orderIdFromUrl, orders, searchParams, setSearchParams]);
 
   const totalPages = Math.max(1, Math.ceil(filteredOrders.length / pageSize));
   const safePage = Math.min(currentPage, totalPages);
