@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, useRef } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useState, useRef } from 'react';
 import {
   collection,
   onSnapshot,
@@ -98,13 +98,83 @@ const parseFromInput = (val: string) => {
 };
 
 // 🌟 THÊM HÀM FORMAT TIỀN TỆ KHI NHẬP LIỆU (1000000 -> 1.000.000)
-const formatNumberInput = (value: string) => {
-  if (!value) return '';
-  // Chỉ lấy các ký tự số
+const numericFormFields = new Set<keyof VoucherFormState>([
+  'discountValue',
+  'maxDiscount',
+  'minOrderValue',
+  'usageLimit',
+]);
+
+const normalizeNumberInput = (value: string) => {
   const digits = value.replace(/\D/g, '');
-  // Thêm dấu chấm phân cách hàng nghìn
+  return digits.replace(/^0+(?=\d)/, '');
+};
+
+const formatNumberInput = (value: string) => {
+  const digits = normalizeNumberInput(value);
+  if (!digits) return '';
   return digits.replace(/\B(?=(\d{3})+(?!\d))/g, '.');
 };
+
+const parseNumberInput = (value: string) => Number(normalizeNumberInput(value) || 0);
+
+const findCaretPositionByDigitCount = (formattedValue: string, digitCount: number) => {
+  if (digitCount <= 0) return 0;
+  let seenDigits = 0;
+  for (let index = 0; index < formattedValue.length; index += 1) {
+    if (/\d/.test(formattedValue[index])) {
+      seenDigits += 1;
+    }
+    if (seenDigits >= digitCount) {
+      return index + 1;
+    }
+  }
+  return formattedValue.length;
+};
+
+function FormattedNumberInput({
+  value,
+  onChange,
+  className,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  className: string;
+}) {
+  const inputRef = useRef<HTMLInputElement>(null);
+  const nextCaretPosition = useRef<number | null>(null);
+  const displayValue = formatNumberInput(value);
+
+  useLayoutEffect(() => {
+    if (nextCaretPosition.current === null) return;
+    const input = inputRef.current;
+    if (!input || document.activeElement !== input) {
+      nextCaretPosition.current = null;
+      return;
+    }
+    const caret = Math.min(nextCaretPosition.current, input.value.length);
+    input.setSelectionRange(caret, caret);
+    nextCaretPosition.current = null;
+  }, [displayValue]);
+
+  return (
+    <input
+      ref={inputRef}
+      type="text"
+      inputMode="numeric"
+      value={displayValue}
+      onChange={(event) => {
+        const rawDisplayValue = event.currentTarget.value;
+        const cursor = event.currentTarget.selectionStart ?? rawDisplayValue.length;
+        const digitCountBeforeCursor = rawDisplayValue.slice(0, cursor).replace(/\D/g, '').length;
+        const nextValue = normalizeNumberInput(rawDisplayValue);
+        nextCaretPosition.current = findCaretPositionByDigitCount(formatNumberInput(nextValue), digitCountBeforeCursor);
+        onChange(nextValue);
+      }}
+      className={className}
+    />
+  );
+}
 
 const getStatusMeta = (voucher: VoucherRecord) => {
   const now = Date.now();
@@ -299,7 +369,10 @@ export default function VouchersPage() {
 
   const handleFormChange = (field: keyof VoucherFormState, value: string | boolean) => {
     setFormState((prev) => {
-      const next = { ...prev, [field]: value };
+      const safeValue = typeof value === 'string' && numericFormFields.has(field)
+        ? normalizeNumberInput(value)
+        : value;
+      const next = { ...prev, [field]: safeValue };
       if (field === 'code' && typeof value === 'string') next.code = value.toUpperCase().replace(/\s+/g, '');
       if (field === 'discountType' && value === 'FIXED') next.maxDiscount = '';
       return next;
@@ -319,10 +392,10 @@ export default function VouchersPage() {
 
     const code = formState.code.trim().toUpperCase();
     const title = formState.title.trim();
-    const discountValue = Number(formState.discountValue || 0);
-    const maxDiscount = formState.discountType === 'PERCENT' ? Number(formState.maxDiscount || 0) : 0;
-    const minOrderValue = Number(formState.minOrderValue || 0);
-    const usageLimit = Number(formState.usageLimit || 0);
+    const discountValue = parseNumberInput(formState.discountValue);
+    const maxDiscount = formState.discountType === 'PERCENT' ? parseNumberInput(formState.maxDiscount) : 0;
+    const minOrderValue = parseNumberInput(formState.minOrderValue);
+    const usageLimit = parseNumberInput(formState.usageLimit);
     
     let finalStartDate = Number(formState.startDate);
     if (!formState.isScheduled) {
@@ -619,13 +692,9 @@ export default function VouchersPage() {
                     {/* 🌟 ĐỔI type="number" THÀNH type="text" VÀ DÙNG HÀM FORMAT */}
                     <label className="space-y-2">
                       <span className="text-sm font-bold text-slate-700">Mức giảm {formState.discountType === 'PERCENT' ? '(%)' : '(VNĐ)'}</span>
-                      <input
-                        type="text"
-                        value={formatNumberInput(formState.discountValue)} 
-                        onChange={(event) => {
-                          const rawValue = event.target.value.replace(/\D/g, ''); // Loại bỏ chữ, chỉ giữ số
-                          handleFormChange('discountValue', rawValue);
-                        }}
+                      <FormattedNumberInput
+                        value={formState.discountValue}
+                        onChange={(value) => handleFormChange('discountValue', value)}
                         className="w-full h-12 px-4 rounded-xl border border-slate-300 bg-white text-slate-900 text-sm font-semibold focus:ring-2 focus:ring-blue-100 focus:border-blue-500 outline-none transition-all"
                       />
                     </label>
@@ -633,13 +702,9 @@ export default function VouchersPage() {
                     {formState.discountType === 'PERCENT' ? (
                       <label className="space-y-2 animate-in fade-in slide-in-from-top-2">
                         <span className="text-sm font-bold text-slate-700">Mức giảm tối đa (VNĐ)</span>
-                        <input
-                          type="text"
-                          value={formatNumberInput(formState.maxDiscount)} 
-                          onChange={(event) => {
-                            const rawValue = event.target.value.replace(/\D/g, '');
-                            handleFormChange('maxDiscount', rawValue);
-                          }}
+                        <FormattedNumberInput
+                          value={formState.maxDiscount}
+                          onChange={(value) => handleFormChange('maxDiscount', value)}
                           className="w-full h-12 px-4 rounded-xl border border-slate-300 bg-white text-slate-900 text-sm font-semibold focus:ring-2 focus:ring-blue-100 focus:border-blue-500 outline-none transition-all"
                         />
                       </label>
@@ -657,26 +722,18 @@ export default function VouchersPage() {
                     {/* 🌟 ÁP DỤNG FORMAT TIỀN TỆ Ở ĐÂY TƯƠNG TỰ */}
                     <label className="space-y-2">
                       <span className="text-sm font-bold text-slate-700">Giá trị đơn tối thiểu (VNĐ)</span>
-                      <input
-                        type="text" 
-                        value={formatNumberInput(formState.minOrderValue)} 
-                        onChange={(event) => {
-                          const rawValue = event.target.value.replace(/\D/g, '');
-                          handleFormChange('minOrderValue', rawValue);
-                        }}
+                      <FormattedNumberInput
+                        value={formState.minOrderValue}
+                        onChange={(value) => handleFormChange('minOrderValue', value)}
                         className="w-full h-12 px-4 rounded-xl border border-slate-300 bg-white text-slate-900 text-sm font-semibold focus:ring-2 focus:ring-blue-100 focus:border-blue-500 outline-none transition-all"
                       />
                     </label>
 
                     <label className="space-y-2">
                       <span className="text-sm font-bold text-slate-700">Tổng số lượng phát hành</span>
-                      <input
-                        type="text" 
-                        value={formatNumberInput(formState.usageLimit)} 
-                        onChange={(event) => {
-                          const rawValue = event.target.value.replace(/\D/g, '');
-                          handleFormChange('usageLimit', rawValue);
-                        }}
+                      <FormattedNumberInput
+                        value={formState.usageLimit}
+                        onChange={(value) => handleFormChange('usageLimit', value)}
                         className="w-full h-12 px-4 rounded-xl border border-slate-300 bg-white text-slate-900 text-sm font-semibold focus:ring-2 focus:ring-blue-100 focus:border-blue-500 outline-none transition-all"
                       />
                     </label>

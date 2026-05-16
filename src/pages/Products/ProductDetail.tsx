@@ -225,6 +225,13 @@ export default function ProductDetail() {
   }, [modelLoadState]);
 
   const formatCurrency = (val: number) => (val === 0 ? '0' : new Intl.NumberFormat('vi-VN').format(val));
+  const normalizeIntegerInput = (value: string) => value.replace(/\D/g, '').replace(/^0+(?=\d)/, '');
+  const formatIntegerInput = (value: number) => String(Math.max(0, Math.trunc(Number(value) || 0)));
+  const handleIntegerChange = (field: 'stock' | 'weight', value: string) => {
+    if (!formData) return;
+    const normalized = normalizeIntegerInput(value);
+    setFormData({ ...formData, [field]: Number(normalized || 0) });
+  };
   const goPrevImage = () => { if (imageList.length === 0) return; setSelectedImage((prev) => (prev - 1 + imageList.length) % imageList.length); };
   const goNextImage = () => { if (imageList.length === 0) return; setSelectedImage((prev) => (prev + 1) % imageList.length); };
 
@@ -238,7 +245,18 @@ export default function ProductDetail() {
     setIsSaving(true);
     try {
       const productId = isCreateMode ? sku : String(formData.id || id || sku);
-      const cleanData = { ...formData, id: productId, sku: sku, name: name, imageUrl: imageList[0] || '', images: imageList, has3D: !!formData.model3DUrl, updatedAt: Date.now(), };
+      const cleanData = {
+        ...formData,
+        id: productId,
+        sku: sku,
+        name: name,
+        stock: Math.max(0, Math.trunc(Number(formData.stock) || 0)),
+        weight: Math.max(0, Math.trunc(Number(formData.weight) || 0)),
+        imageUrl: imageList[0] || '',
+        images: imageList,
+        has3D: !!formData.model3DUrl,
+        updatedAt: Date.now(),
+      };
       const { imagesInput, ...payload } = cleanData;
       
       if (isCreateMode) {
@@ -426,9 +444,9 @@ export default function ProductDetail() {
                       </div>
 
                       <div className="grid grid-cols-3 gap-4">
-                        <div><label className="block text-xs font-bold text-slate-500 mb-2">Tồn kho (Hộp)</label><input type="number" min={0} value={formData.stock} onChange={(e) => handleFieldChange('stock', Number(e.target.value))} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 outline-none focus:ring-2 focus:ring-blue-500 font-black text-center" /></div>
+                        <div><label className="block text-xs font-bold text-slate-500 mb-2">Tồn kho (Hộp)</label><input type="text" inputMode="numeric" value={formatIntegerInput(formData.stock)} onChange={(e) => handleIntegerChange('stock', e.target.value)} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 outline-none focus:ring-2 focus:ring-blue-500 font-black text-center" /></div>
                         <div><label className="block text-xs font-bold text-slate-500 mb-2">Đã bán <span className="text-[10px] font-normal italic text-slate-400">(Read-only)</span></label><input type="number" value={formData.sold} disabled className="w-full bg-slate-100 border border-slate-200 text-slate-400 rounded-xl px-4 py-3 outline-none font-bold text-center cursor-not-allowed" /></div>
-                        <div><label className="block text-xs font-bold text-slate-500 mb-2">Cân nặng (Gr)</label><input type="number" min={0} value={formData.weight} onChange={(e) => handleFieldChange('weight', Number(e.target.value))} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 outline-none focus:ring-2 focus:ring-blue-500 font-bold text-center" /></div>
+                        <div><label className="block text-xs font-bold text-slate-500 mb-2">Cân nặng (Gr)</label><input type="text" inputMode="numeric" value={formatIntegerInput(formData.weight)} onChange={(e) => handleIntegerChange('weight', e.target.value)} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 outline-none focus:ring-2 focus:ring-blue-500 font-bold text-center" /></div>
                       </div>
 
                       <div className="border-t border-slate-100 pt-6 space-y-4">
