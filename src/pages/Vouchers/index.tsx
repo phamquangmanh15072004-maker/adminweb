@@ -127,18 +127,36 @@ function FormattedNumberInput({
   onChange: (value: string) => void;
   className: string;
 }) {
-  const [isFocused, setIsFocused] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const shouldMoveCaretToEndRef = useRef(false);
   const normalizedValue = normalizeNumberInput(value);
-  const displayValue = isFocused ? normalizedValue : formatNumberInput(normalizedValue);
+  const displayValue = formatNumberInput(normalizedValue);
+
+  useEffect(() => {
+    if (!shouldMoveCaretToEndRef.current) return;
+    const input = inputRef.current;
+    if (!input || document.activeElement !== input) {
+      shouldMoveCaretToEndRef.current = false;
+      return;
+    }
+    const endPosition = input.value.length;
+    input.setSelectionRange(endPosition, endPosition);
+    shouldMoveCaretToEndRef.current = false;
+  }, [displayValue]);
 
   return (
     <input
+      ref={inputRef}
       type="text"
       inputMode="numeric"
       value={displayValue}
-      onFocus={() => setIsFocused(true)}
-      onBlur={() => setIsFocused(false)}
-      onChange={(event) => onChange(normalizeNumberInput(event.currentTarget.value))}
+      onFocus={() => {
+        shouldMoveCaretToEndRef.current = true;
+      }}
+      onChange={(event) => {
+        shouldMoveCaretToEndRef.current = true;
+        onChange(normalizeNumberInput(event.currentTarget.value));
+      }}
       className={className}
     />
   );
