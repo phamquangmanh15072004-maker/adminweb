@@ -31,7 +31,7 @@ import toast from 'react-hot-toast';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { db } from '../../firebase';
 import { sendNotificationToAppUser } from '../../services/notificationService';
-import { MessageSquare, /* các icon khác giữ nguyên */ } from 'lucide-react';
+import { MessageSquare, /* cÃ¡c icon khÃ¡c giá»¯ nguyÃªn */ } from 'lucide-react';
 type OrderStatus =
   | 'PENDING'
   | 'CONFIRMED'
@@ -131,34 +131,35 @@ type CancelDialogState = {
 const DEFAULT_PAGE_SIZE = 8;
 const PAGE_SIZE_OPTIONS = [8, 16, 24];
 const PAGE_SIZE_STORAGE_KEY = 'orders_page_size';
-const CANCEL_REASONS = ['Hết hàng / Lỗi kho', 'Nghi ngờ gian lận', 'Khách yêu cầu hủy', 'Lý do khác'] as const;
-const OTHER_CANCEL_REASON = 'Lý do khác';
+const isVideoEvidenceUrl = (url: string) => /\.(mp4|mov|webm|m4v)(\?|$)/i.test(url) || /\/video\/upload\//i.test(url);
+const CANCEL_REASONS = ['Háº¿t hÃ ng / Lá»—i kho', 'Nghi ngá» gian láº­n', 'KhÃ¡ch yÃªu cáº§u há»§y', 'LÃ½ do khÃ¡c'] as const;
+const OTHER_CANCEL_REASON = 'LÃ½ do khÃ¡c';
 
 const STATUS_OPTIONS: Array<{ value: OrderStatus | 'ALL'; label: string }> = [
-  { value: 'ALL', label: 'Tất cả' },
-  { value: 'PENDING', label: 'Chờ duyệt' },
-  { value: 'CONFIRMED', label: 'Chờ lấy hàng' },
-  { value: 'SHIPPING', label: 'Đang giao' },
-  { value: 'COMPLETED', label: 'Hoàn thành' },
-  { value: 'RETURN_PENDING', label: 'Chờ xử lý trả hàng' },
-  { value: 'RETURN_APPROVED', label: 'Chờ khách gửi' },
-  { value: 'RETURNING', label: 'Đang hoàn hàng' },
-  { value: 'RETURN_REJECTED', label: 'Từ chối trả hàng' },
-  { value: 'CANCELLED', label: 'Đã hủy' },
-  { value: 'REFUNDING', label: 'Chờ hoàn tiền' },
-  { value: 'REFUNDED', label: 'Đã hoàn tiền' },
+  { value: 'ALL', label: 'Táº¥t cáº£' },
+  { value: 'PENDING', label: 'Chá» duyá»‡t' },
+  { value: 'CONFIRMED', label: 'Chá» láº¥y hÃ ng' },
+  { value: 'SHIPPING', label: 'Äang giao' },
+  { value: 'COMPLETED', label: 'HoÃ n thÃ nh' },
+  { value: 'RETURN_PENDING', label: 'Chá» xá»­ lÃ½ tráº£ hÃ ng' },
+  { value: 'RETURN_APPROVED', label: 'Chá» khÃ¡ch gá»­i' },
+  { value: 'RETURNING', label: 'Äang hoÃ n hÃ ng' },
+  { value: 'RETURN_REJECTED', label: 'Tá»« chá»‘i tráº£ hÃ ng' },
+  { value: 'CANCELLED', label: 'ÄÃ£ há»§y' },
+  { value: 'REFUNDING', label: 'Chá» hoÃ n tiá»n' },
+  { value: 'REFUNDED', label: 'ÄÃ£ hoÃ n tiá»n' },
 ];
 
 const KANBAN_COLUMNS: Array<{ status: OrderStatus; label: string }> = [
-  { status: 'PENDING', label: 'Chờ duyệt' },
-  { status: 'CONFIRMED', label: 'Chờ lấy hàng' },
-  { status: 'SHIPPING', label: 'Đang giao' },
-  { status: 'COMPLETED', label: 'Hoàn thành' },
-  { status: 'RETURN_PENDING', label: 'Chờ xử lý trả hàng' },
-  { status: 'RETURN_REJECTED', label: 'Từ chối trả' },
-  { status: 'CANCELLED', label: 'Đã hủy' },
-  { status: 'REFUNDING', label: 'Chờ hoàn tiền' },
-  { status: 'REFUNDED', label: 'Đã hoàn tiền' },
+  { status: 'PENDING', label: 'Chá» duyá»‡t' },
+  { status: 'CONFIRMED', label: 'Chá» láº¥y hÃ ng' },
+  { status: 'SHIPPING', label: 'Äang giao' },
+  { status: 'COMPLETED', label: 'HoÃ n thÃ nh' },
+  { status: 'RETURN_PENDING', label: 'Chá» xá»­ lÃ½ tráº£ hÃ ng' },
+  { status: 'RETURN_REJECTED', label: 'Tá»« chá»‘i tráº£' },
+  { status: 'CANCELLED', label: 'ÄÃ£ há»§y' },
+  { status: 'REFUNDING', label: 'Chá» hoÃ n tiá»n' },
+  { status: 'REFUNDED', label: 'ÄÃ£ hoÃ n tiá»n' },
 ];
 
 const toStatus = (value?: string): OrderStatus => {
@@ -204,13 +205,13 @@ const removeVietnameseTones = (value: string) =>
   value
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
-    .replace(/đ/g, 'd')
-    .replace(/Đ/g, 'D');
+    .replace(/Ä‘/g, 'd')
+    .replace(/Ä/g, 'D');
 
 const normalizeText = (value: string) => removeVietnameseTones(String(value || '').toLowerCase().trim());
-const getName = (order: OrderRecord) => order.receiverName || order.customerName || order.userName || order.fullName || 'Khách vãng lai';
-const getPhone = (order: OrderRecord) => order.receiverPhone || order.phone || order.phoneNumber || 'Chưa cập nhật SĐT';
-const getAddress = (order: OrderRecord) => order.address || order.shippingAddress || 'Chưa cập nhật địa chỉ';
+const getName = (order: OrderRecord) => order.receiverName || order.customerName || order.userName || order.fullName || 'KhÃ¡ch vÃ£ng lai';
+const getPhone = (order: OrderRecord) => order.receiverPhone || order.phone || order.phoneNumber || 'ChÆ°a cáº­p nháº­t SÄT';
+const getAddress = (order: OrderRecord) => order.address || order.shippingAddress || 'ChÆ°a cáº­p nháº­t Ä‘á»‹a chá»‰';
 const getItems = (order: OrderRecord): OrderItem[] =>
   order.items ||
   order.cartItems ||
@@ -228,15 +229,15 @@ const getDiscountAmount = (order: OrderRecord) =>
   Number(order.voucherDiscount || order.discountAmount || order.discountValue || order.shippingDiscount || 0);
 const getShippingFee = (order: OrderRecord) => Number(order.shippingFeeAfterDiscount ?? order.shippingFee ?? 0);
 const isFreeShip = (order: OrderRecord) => Boolean(order.freeshipCode || order.freeShip || order.isFreeShip);
-const getVoucherLabel = (order: OrderRecord) => order.voucherCode || order.voucherName || 'Không áp dụng';
-const getItemName = (item: OrderItem) => item.product?.name || item.name || item.productName || 'Sản phẩm';
+const getVoucherLabel = (order: OrderRecord) => order.voucherCode || order.voucherName || 'KhÃ´ng Ã¡p dá»¥ng';
+const getItemName = (item: OrderItem) => item.product?.name || item.name || item.productName || 'Sáº£n pháº©m';
 const getItemImage = (item: OrderItem) => item.product?.imageUrl || item.imageUrl;
 const getItemCategory = (item: OrderItem) => item.product?.category || item.category;
 const getItemPurchasedPrice = (item: OrderItem) =>
   Number(item.purchasedPrice ?? item.price ?? item.unitPrice ?? item.product?.price ?? 0);
-const formatMoney = (value: number) => `${new Intl.NumberFormat('vi-VN').format(value)}đ`;
+const formatMoney = (value: number) => `${new Intl.NumberFormat('vi-VN').format(value)}Ä‘`;
 const formatTime = (timestamp: any) => {
-  if (!timestamp) return 'Không rõ thời gian';
+  if (!timestamp) return 'KhÃ´ng rÃµ thá»i gian';
   if (timestamp?.toDate) return timestamp.toDate().toLocaleString('vi-VN');
   if (typeof timestamp === 'number') return new Date(timestamp).toLocaleString('vi-VN');
   return new Date(timestamp).toLocaleString('vi-VN');
@@ -271,7 +272,7 @@ export default function OrdersPage() {
   const searchFromUrl = searchParams.get('search');
 
   useEffect(() => {
-    document.title = "Quản lý Đơn hàng - Gunpla Store";
+    document.title = "Quáº£n lÃ½ ÄÆ¡n hÃ ng - Gunpla Store";
   }, []);
 
   useEffect(() => {
@@ -287,10 +288,10 @@ export default function OrdersPage() {
   const handleCopyAndCatch = async (text: string, label: string) => {
     try {
       await navigator.clipboard.writeText(text);
-      toast.success(`Đã copy ${label}!`);
+      toast.success(`ÄÃ£ copy ${label}!`);
     } catch (error) {
       console.error(error);
-      toast.error('Không thể copy dữ liệu này!');
+      toast.error('KhÃ´ng thá»ƒ copy dá»¯ liá»‡u nÃ y!');
     }
   };
 
@@ -449,29 +450,29 @@ export default function OrdersPage() {
   const getStatusBadge = (status: OrderStatus) => {
     switch (status) {
       case 'PENDING':
-        return <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-amber-50 text-amber-600 text-xs font-bold border border-amber-200"><Clock className="w-3.5 h-3.5" /> Chờ duyệt</span>;
+        return <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-amber-50 text-amber-600 text-xs font-bold border border-amber-200"><Clock className="w-3.5 h-3.5" /> Chá» duyá»‡t</span>;
       case 'CONFIRMED':
-        return <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-indigo-50 text-indigo-600 text-xs font-bold border border-indigo-200"><Package className="w-3.5 h-3.5" /> Chờ lấy hàng</span>;
+        return <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-indigo-50 text-indigo-600 text-xs font-bold border border-indigo-200"><Package className="w-3.5 h-3.5" /> Chá» láº¥y hÃ ng</span>;
       case 'SHIPPING':
-        return <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-blue-50 text-blue-600 text-xs font-bold border border-blue-200"><Truck className="w-3.5 h-3.5" /> Đang giao</span>;
+        return <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-blue-50 text-blue-600 text-xs font-bold border border-blue-200"><Truck className="w-3.5 h-3.5" /> Äang giao</span>;
       case 'COMPLETED':
-        return <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-emerald-50 text-emerald-600 text-xs font-bold border border-emerald-200"><CheckCircle className="w-3.5 h-3.5" /> Hoàn thành</span>;
+        return <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-emerald-50 text-emerald-600 text-xs font-bold border border-emerald-200"><CheckCircle className="w-3.5 h-3.5" /> HoÃ n thÃ nh</span>;
       case 'RETURN_PENDING':
-        return <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-orange-50 text-orange-600 text-xs font-bold border border-orange-200"><AlertTriangle className="w-3.5 h-3.5" /> Chờ xử lý Trả hàng</span>;
+        return <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-orange-50 text-orange-600 text-xs font-bold border border-orange-200"><AlertTriangle className="w-3.5 h-3.5" /> Chá» xá»­ lÃ½ Tráº£ hÃ ng</span>;
       case 'RETURN_APPROVED': 
-        return <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-blue-50 text-blue-600 text-xs font-bold border border-blue-200"><Package className="w-3.5 h-3.5" /> Chờ khách gửi</span>;
+        return <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-blue-50 text-blue-600 text-xs font-bold border border-blue-200"><Package className="w-3.5 h-3.5" /> Chá» khÃ¡ch gá»­i</span>;
       case 'RETURNING': 
-        return <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-cyan-50 text-cyan-600 text-xs font-bold border border-cyan-200"><Truck className="w-3.5 h-3.5" /> Đang hoàn hàng</span>;
+        return <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-cyan-50 text-cyan-600 text-xs font-bold border border-cyan-200"><Truck className="w-3.5 h-3.5" /> Äang hoÃ n hÃ ng</span>;
       case 'RETURN_REJECTED':
-        return <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-red-50 text-red-600 text-xs font-bold border border-red-200"><XCircle className="w-3.5 h-3.5" /> Từ chối Trả</span>;
+        return <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-red-50 text-red-600 text-xs font-bold border border-red-200"><XCircle className="w-3.5 h-3.5" /> Tá»« chá»‘i Tráº£</span>;
       case 'CANCELLED':
-        return <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-red-50 text-red-600 text-xs font-bold border border-red-200"><XCircle className="w-3.5 h-3.5" /> Đã hủy</span>;
+        return <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-red-50 text-red-600 text-xs font-bold border border-red-200"><XCircle className="w-3.5 h-3.5" /> ÄÃ£ há»§y</span>;
       case 'REFUNDING':
-        return <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-fuchsia-50 text-fuchsia-700 text-xs font-bold border border-fuchsia-200"><RotateCcw className="w-3.5 h-3.5" /> Chờ hoàn tiền</span>;
+        return <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-fuchsia-50 text-fuchsia-700 text-xs font-bold border border-fuchsia-200"><RotateCcw className="w-3.5 h-3.5" /> Chá» hoÃ n tiá»n</span>;
       case 'REFUNDED':
-        return <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-slate-100 text-slate-600 text-xs font-bold border border-slate-300"><Wallet className="w-3.5 h-3.5" /> Đã hoàn tiền</span>;
+        return <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-slate-100 text-slate-600 text-xs font-bold border border-slate-300"><Wallet className="w-3.5 h-3.5" /> ÄÃ£ hoÃ n tiá»n</span>;
       default:
-        return <span className="inline-flex px-3 py-1 rounded-full bg-slate-100 text-slate-600 text-xs font-bold border border-slate-200">Không rõ</span>;
+        return <span className="inline-flex px-3 py-1 rounded-full bg-slate-100 text-slate-600 text-xs font-bold border border-slate-200">KhÃ´ng rÃµ</span>;
     }
   };
 
@@ -480,14 +481,14 @@ export default function OrdersPage() {
     const paymentStatus = toPaymentStatus(order.paymentStatus);
 
     if (method === 'COD') {
-      return <span className="inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-bold bg-sky-100 text-sky-700 border border-sky-200">COD - Thanh toán khi nhận hàng</span>;
+      return <span className="inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-bold bg-sky-100 text-sky-700 border border-sky-200">COD - Thanh toÃ¡n khi nháº­n hÃ ng</span>;
     }
 
     if (paymentStatus === 'PAID') {
-      return <span className="inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-bold bg-emerald-100 text-emerald-700 border border-emerald-200">Đã thanh toán Online</span>;
+      return <span className="inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-bold bg-emerald-100 text-emerald-700 border border-emerald-200">ÄÃ£ thanh toÃ¡n Online</span>;
     }
 
-    return <span className="inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-bold bg-slate-100 text-slate-700 border border-slate-200">Thanh toán Online chưa hoàn tất</span>;
+    return <span className="inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-bold bg-slate-100 text-slate-700 border border-slate-200">Thanh toÃ¡n Online chÆ°a hoÃ n táº¥t</span>;
   };
 
   const getPromoCodeTags = (order: OrderRecord) => {
@@ -519,7 +520,7 @@ export default function OrdersPage() {
       <div className="flex flex-wrap items-center gap-2">
         {discountAmount > 0 && (
           <span className="inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-bold bg-rose-100 text-rose-700 border border-rose-200">
-            Voucher giảm {formatMoney(discountAmount)}
+            Voucher giáº£m {formatMoney(discountAmount)}
           </span>
         )}
         {isFreeShip(order) && (
@@ -534,7 +535,7 @@ export default function OrdersPage() {
   const updateOrderStatus = async (
     order: OrderRecord,
     newStatus: Exclude<OrderStatus, 'UNKNOWN'>,
-    successMessage = 'Đã cập nhật trạng thái đơn hàng!'
+    successMessage = 'ÄÃ£ cáº­p nháº­t tráº¡ng thÃ¡i Ä‘Æ¡n hÃ ng!'
   ) => {
     setIsProcessingId(order.id);
     try {
@@ -547,8 +548,8 @@ export default function OrdersPage() {
         if (newStatus === 'CONFIRMED') {
           await sendNotificationToAppUser(
             order.userId,
-            'Đơn hàng đã được duyệt ✅',
-            `Đơn hàng #${order.id.slice(-6).toUpperCase()} của bạn đã được xác nhận và đang chờ lấy hàng.`,
+            'ÄÆ¡n hÃ ng Ä‘Ã£ Ä‘Æ°á»£c duyá»‡t âœ…',
+            `ÄÆ¡n hÃ ng #${order.id.slice(-6).toUpperCase()} cá»§a báº¡n Ä‘Ã£ Ä‘Æ°á»£c xÃ¡c nháº­n vÃ  Ä‘ang chá» láº¥y hÃ ng.`,
             'ORDER_UPDATE',
             order.id
           );
@@ -556,8 +557,8 @@ export default function OrdersPage() {
         if (newStatus === 'SHIPPING') {
           await sendNotificationToAppUser(
             order.userId,
-            'Đơn hàng đang được vận chuyển 🚚',
-            `Đơn hàng #${order.id.slice(-6).toUpperCase()} đang trên đường giao đến bạn.`,
+            'ÄÆ¡n hÃ ng Ä‘ang Ä‘Æ°á»£c váº­n chuyá»ƒn ðŸšš',
+            `ÄÆ¡n hÃ ng #${order.id.slice(-6).toUpperCase()} Ä‘ang trÃªn Ä‘Æ°á»ng giao Ä‘áº¿n báº¡n.`,
             'ORDER_UPDATE',
             order.id
           );
@@ -566,8 +567,8 @@ export default function OrdersPage() {
         if (newStatus === 'COMPLETED') {
           await sendNotificationToAppUser(
             order.userId,
-            'Giao hàng thành công 🎉',
-            `Đơn hàng #${order.id.slice(-6).toUpperCase()} đã giao thành công. Hãy để lại đánh giá nhé!`,
+            'Giao hÃ ng thÃ nh cÃ´ng ðŸŽ‰',
+            `ÄÆ¡n hÃ ng #${order.id.slice(-6).toUpperCase()} Ä‘Ã£ giao thÃ nh cÃ´ng. HÃ£y Ä‘á»ƒ láº¡i Ä‘Ã¡nh giÃ¡ nhÃ©!`,
             'ORDER_UPDATE',
             order.id,
             undefined,
@@ -578,8 +579,8 @@ export default function OrdersPage() {
         if (newStatus === 'REFUNDING') {
           await sendNotificationToAppUser(
             order.userId,
-            'Đồng ý Trả hàng / Hoàn tiền ✅',
-            `Shop đã chấp nhận yêu cầu trả hàng của đơn #${order.id.slice(-6).toUpperCase()}. Shop sẽ sớm hoàn tiền cho bạn.`,
+            'Äá»“ng Ã½ Tráº£ hÃ ng / HoÃ n tiá»n âœ…',
+            `Shop Ä‘Ã£ cháº¥p nháº­n yÃªu cáº§u tráº£ hÃ ng cá»§a Ä‘Æ¡n #${order.id.slice(-6).toUpperCase()}. Shop sáº½ sá»›m hoÃ n tiá»n cho báº¡n.`,
             'ORDER_UPDATE',
             order.id
           );
@@ -589,7 +590,7 @@ export default function OrdersPage() {
       toast.success(successMessage);
     } catch (error) {
       console.error(error);
-      toast.error('Lỗi khi cập nhật đơn hàng!');
+      toast.error('Lá»—i khi cáº­p nháº­t Ä‘Æ¡n hÃ ng!');
     } finally {
       setIsProcessingId(null);
     }
@@ -600,7 +601,7 @@ export default function OrdersPage() {
     const { order, reason } = rejectReturnDialog;
     
     if (!reason.trim()) {
-      toast.error('Vui lòng nhập lý do từ chối!');
+      toast.error('Vui lÃ²ng nháº­p lÃ½ do tá»« chá»‘i!');
       return;
     }
 
@@ -615,19 +616,19 @@ export default function OrdersPage() {
       if (order.userId) {
         await sendNotificationToAppUser(
           order.userId,
-          'Từ chối Trả hàng / Hoàn tiền ❌',
-          `Shop đã từ chối yêu cầu của bạn. Lý do: ${reason.trim()}`,
+          'Tá»« chá»‘i Tráº£ hÃ ng / HoÃ n tiá»n âŒ',
+          `Shop Ä‘Ã£ tá»« chá»‘i yÃªu cáº§u cá»§a báº¡n. LÃ½ do: ${reason.trim()}`,
           'ORDER_UPDATE',
           order.id
         );
       }
-      toast.success('Đã từ chối khiếu nại!');
+      toast.success('ÄÃ£ tá»« chá»‘i khiáº¿u náº¡i!');
     } catch (e) {
       console.error(e);
-      toast.error('Lỗi khi từ chối!');
+      toast.error('Lá»—i khi tá»« chá»‘i!');
     } finally {
       setIsProcessingId(null);
-      setRejectReturnDialog(null); // Đóng Dialog
+      setRejectReturnDialog(null); // ÄÃ³ng Dialog
     }
   };
   const jumpToPage = () => {
@@ -647,7 +648,7 @@ export default function OrdersPage() {
     const { order, reason, customReason } = cancelDialog;
     const resolvedReason = reason === OTHER_CANCEL_REASON ? customReason.trim() : reason;
     if (!resolvedReason) {
-      toast.error('Vui lòng nhập lý do hủy đơn!');
+      toast.error('Vui lÃ²ng nháº­p lÃ½ do há»§y Ä‘Æ¡n!');
       return;
     }
 
@@ -657,7 +658,7 @@ export default function OrdersPage() {
 
     const pushAutoSupportMessage = async (targetOrder: OrderRecord, message: string) => {
       if (!targetOrder.userId) {
-        throw new Error('Thiếu userId để tạo chat hỗ trợ hoàn tiền');
+        throw new Error('Thiáº¿u userId Ä‘á»ƒ táº¡o chat há»— trá»£ hoÃ n tiá»n');
       }
 
       const now = Date.now();
@@ -667,7 +668,7 @@ export default function OrdersPage() {
       const snap = await getDoc(channelRef);
 
       if (!snap.exists()) {
-        // 🌟 NÂNG CẤP: Truy xuất bảng users để lấy Avatar mới nhất
+        // ðŸŒŸ NÃ‚NG Cáº¤P: Truy xuáº¥t báº£ng users Ä‘á»ƒ láº¥y Avatar má»›i nháº¥t
         const userSnap = await getDoc(doc(db, 'users', targetOrder.userId));
         let realAvatar = targetOrder.userAvatar || '';
         if (userSnap.exists()) {
@@ -680,9 +681,9 @@ export default function OrdersPage() {
           participants: [targetOrder.userId],
           userId: targetOrder.userId,
           userName: targetOrder.userName || targetOrder.customerName || targetOrder.fullName || getName(targetOrder),
-          userAvatar: realAvatar, // 🌟 Gán Avatar xịn vào đây
+          userAvatar: realAvatar, // ðŸŒŸ GÃ¡n Avatar xá»‹n vÃ o Ä‘Ã¢y
           receiverId: 'ADMIN',
-          receiverName: 'Hỗ trợ Shop',
+          receiverName: 'Há»— trá»£ Shop',
           lastMessage: message,
           lastUpdated: now,
           status: 'ACTIVE',
@@ -761,31 +762,31 @@ export default function OrdersPage() {
       await batch.commit();
       if (order.userId) {
         if (paymentStatus === 'PAID' && previousStatus !== 'REFUNDING') {
-          const notifyMessage = `Hệ thống: Đơn hàng #${order.id.slice(-6).toUpperCase()} đã bị Shop hủy. Lý do: ${resolvedReason}. Vui lòng nhắn tin Số Tài Khoản, Ngân hàng và Tên chủ tài khoản tại đây để Shop hoàn tiền nhé!`;
+          const notifyMessage = `Há»‡ thá»‘ng: ÄÆ¡n hÃ ng #${order.id.slice(-6).toUpperCase()} Ä‘Ã£ bá»‹ Shop há»§y. LÃ½ do: ${resolvedReason}. Vui lÃ²ng nháº¯n tin Sá»‘ TÃ i Khoáº£n, NgÃ¢n hÃ ng vÃ  TÃªn chá»§ tÃ i khoáº£n táº¡i Ä‘Ã¢y Ä‘á»ƒ Shop hoÃ n tiá»n nhÃ©!`;
           await pushAutoSupportMessage(order, notifyMessage);
           
           await sendNotificationToAppUser(
             order.userId,
-            'Đơn hàng đã bị hủy & Chờ hoàn tiền 💸',
-            `Đơn #${order.id.slice(-6).toUpperCase()} đã bị hủy. Vui lòng kiểm tra mục Chat để cung cấp STK cho Shop.`,
+            'ÄÆ¡n hÃ ng Ä‘Ã£ bá»‹ há»§y & Chá» hoÃ n tiá»n ðŸ’¸',
+            `ÄÆ¡n #${order.id.slice(-6).toUpperCase()} Ä‘Ã£ bá»‹ há»§y. Vui lÃ²ng kiá»ƒm tra má»¥c Chat Ä‘á»ƒ cung cáº¥p STK cho Shop.`,
             'ORDER_UPDATE',
             order.id
           );
-          toast.success('Đơn đã chuyển sang chờ hoàn tiền, Đã hoàn Voucher và đã báo cho khách!');
+          toast.success('ÄÆ¡n Ä‘Ã£ chuyá»ƒn sang chá» hoÃ n tiá»n, ÄÃ£ hoÃ n Voucher vÃ  Ä‘Ã£ bÃ¡o cho khÃ¡ch!');
         } else {
           await sendNotificationToAppUser(
             order.userId,
-            'Đơn hàng đã bị hủy ❌',
-            `Đơn #${order.id.slice(-6).toUpperCase()} đã bị hủy. Lý do: ${resolvedReason}`,
+            'ÄÆ¡n hÃ ng Ä‘Ã£ bá»‹ há»§y âŒ',
+            `ÄÆ¡n #${order.id.slice(-6).toUpperCase()} Ä‘Ã£ bá»‹ há»§y. LÃ½ do: ${resolvedReason}`,
             'ORDER_UPDATE',
             order.id
           );
-          toast.success('Đã hủy đơn hàng, hoàn tồn kho và hoàn Voucher thành công!');
+          toast.success('ÄÃ£ há»§y Ä‘Æ¡n hÃ ng, hoÃ n tá»“n kho vÃ  hoÃ n Voucher thÃ nh cÃ´ng!');
         }
       }
     } catch (error) {
       console.error(error);
-      toast.error('Lỗi khi cập nhật đơn hàng hoặc hoàn tồn kho!');
+      toast.error('Lá»—i khi cáº­p nháº­t Ä‘Æ¡n hÃ ng hoáº·c hoÃ n tá»“n kho!');
       return;
     } finally {
       setIsProcessingId(null);
@@ -818,16 +819,16 @@ export default function OrdersPage() {
       if (order.userId) {
         await sendNotificationToAppUser(
           order.userId,
-          'Đã nhận hàng trả & Chờ hoàn tiền 💸',
-          `Shop đã nhận được hàng trả của đơn #${order.id.slice(-6).toUpperCase()}. Kế toán sẽ sớm xử lý hoàn tiền cho bạn.`,
+          'ÄÃ£ nháº­n hÃ ng tráº£ & Chá» hoÃ n tiá»n ðŸ’¸',
+          `Shop Ä‘Ã£ nháº­n Ä‘Æ°á»£c hÃ ng tráº£ cá»§a Ä‘Æ¡n #${order.id.slice(-6).toUpperCase()}. Káº¿ toÃ¡n sáº½ sá»›m xá»­ lÃ½ hoÃ n tiá»n cho báº¡n.`,
           'ORDER_UPDATE',
           order.id
         );
       }
-      toast.success('Đã xác nhận nhận hàng và hoàn lại tồn kho thành công!');
+      toast.success('ÄÃ£ xÃ¡c nháº­n nháº­n hÃ ng vÃ  hoÃ n láº¡i tá»“n kho thÃ nh cÃ´ng!');
     } catch (error) {
       console.error(error);
-      toast.error('Lỗi khi xử lý nhận hàng!');
+      toast.error('Lá»—i khi xá»­ lÃ½ nháº­n hÃ ng!');
     } finally {
       setIsProcessingId(null);
     }
@@ -855,7 +856,7 @@ export default function OrdersPage() {
     const file = event.target.files?.[0];
     if (!file) return;
     if (!file.type.startsWith('image/')) {
-      toast.error('Vui lòng chọn file ảnh biên lai!');
+      toast.error('Vui lÃ²ng chá»n file áº£nh biÃªn lai!');
       event.target.value = '';
       return;
     }
@@ -871,7 +872,7 @@ export default function OrdersPage() {
   const handleConfirmRefundTransfer = async () => {
     if (!refundDialog) return;
     if (!refundReceiptFile) {
-      toast.error('Vui lòng tải lên ảnh biên lai trước khi xác nhận!');
+      toast.error('Vui lÃ²ng táº£i lÃªn áº£nh biÃªn lai trÆ°á»›c khi xÃ¡c nháº­n!');
       return;
     }
 
@@ -897,7 +898,7 @@ export default function OrdersPage() {
           userName: targetOrder.userName || targetOrder.customerName || targetOrder.fullName || getName(targetOrder),
           userAvatar: targetOrder.userAvatar || '',
           receiverId: 'ADMIN',
-          receiverName: 'Hỗ trợ Shop',
+          receiverName: 'Há»— trá»£ Shop',
           lastMessage: '',
           lastUpdated: now,
           status: 'ACTIVE',
@@ -940,13 +941,13 @@ export default function OrdersPage() {
       });
 
       if (!cloudinaryResponse.ok) {
-        throw new Error('Upload biên lai thất bại');
+        throw new Error('Upload biÃªn lai tháº¥t báº¡i');
       }
 
       const cloudinaryData = await cloudinaryResponse.json();
       const receiptUrl = cloudinaryData?.secure_url;
       if (!receiptUrl) {
-        throw new Error('Không nhận được URL biên lai từ Cloudinary');
+        throw new Error('KhÃ´ng nháº­n Ä‘Æ°á»£c URL biÃªn lai tá»« Cloudinary');
       }
 
       await updateDoc(doc(db, 'orders', refundDialog.id), {
@@ -957,30 +958,30 @@ export default function OrdersPage() {
       });
 
       if (previousStatus !== 'REFUNDED' && !refundDialog.refundNotifiedAt && refundDialog.userId) {
-        const refundSuccessMessage = `Hệ thống: Shop đã hoàn tất chuyển khoản hoàn tiền cho đơn hàng #${refundDialog.id.slice(-6).toUpperCase()}. Bạn vui lòng kiểm tra tài khoản ngân hàng nhé! Cảm ơn bạn.`;
+        const refundSuccessMessage = `Há»‡ thá»‘ng: Shop Ä‘Ã£ hoÃ n táº¥t chuyá»ƒn khoáº£n hoÃ n tiá»n cho Ä‘Æ¡n hÃ ng #${refundDialog.id.slice(-6).toUpperCase()}. Báº¡n vui lÃ²ng kiá»ƒm tra tÃ i khoáº£n ngÃ¢n hÃ ng nhÃ©! Cáº£m Æ¡n báº¡n.`;
         await pushAutoSupportMessage(refundDialog, refundSuccessMessage);
         
         await sendNotificationToAppUser(
           refundDialog.userId, 
-          'Đã Hoàn tiền thành công 💰', 
-          `Shop đã chuyển khoản hoàn tiền cho đơn #${refundDialog.id.slice(-6).toUpperCase()}. Kiểm tra biên lai trong chi tiết đơn nhé!`, 
+          'ÄÃ£ HoÃ n tiá»n thÃ nh cÃ´ng ðŸ’°', 
+          `Shop Ä‘Ã£ chuyá»ƒn khoáº£n hoÃ n tiá»n cho Ä‘Æ¡n #${refundDialog.id.slice(-6).toUpperCase()}. Kiá»ƒm tra biÃªn lai trong chi tiáº¿t Ä‘Æ¡n nhÃ©!`, 
           'ORDER_UPDATE', 
           refundDialog.id
         );
       }
 
-      toast.success('Đã xác nhận hoàn tiền và lưu biên lai thành công!');
+      toast.success('ÄÃ£ xÃ¡c nháº­n hoÃ n tiá»n vÃ  lÆ°u biÃªn lai thÃ nh cÃ´ng!');
       closeRefundDialog();
     } catch (error) {
       console.error(error);
-      toast.error('Không thể xử lý hoàn tiền. Vui lòng thử lại!');
+      toast.error('KhÃ´ng thá»ƒ xá»­ lÃ½ hoÃ n tiá»n. Vui lÃ²ng thá»­ láº¡i!');
     } finally {
       setIsSubmittingRefund(false);
     }
   };
   const handleChatWithUser = async (order: OrderRecord) => {
     if (!order.userId) {
-      toast.error('Đơn hàng này không có tài khoản người dùng liên kết!');
+      toast.error('ÄÆ¡n hÃ ng nÃ y khÃ´ng cÃ³ tÃ i khoáº£n ngÆ°á»i dÃ¹ng liÃªn káº¿t!');
       return;
     }
 
@@ -992,7 +993,7 @@ export default function OrdersPage() {
       const snap = await getDoc(channelRef);
 
       if (!snap.exists()) {
-        // 🌟 NÂNG CẤP: Truy xuất bảng users để lấy Avatar mới nhất
+        // ðŸŒŸ NÃ‚NG Cáº¤P: Truy xuáº¥t báº£ng users Ä‘á»ƒ láº¥y Avatar má»›i nháº¥t
         const userSnap = await getDoc(doc(db, 'users', order.userId));
         let realAvatar = order.userAvatar || '';
         if (userSnap.exists()) {
@@ -1005,9 +1006,9 @@ export default function OrdersPage() {
           participants: [order.userId],
           userId: order.userId,
           userName: getName(order),
-          userAvatar: realAvatar, // 🌟 Gán Avatar xịn vào đây
+          userAvatar: realAvatar, // ðŸŒŸ GÃ¡n Avatar xá»‹n vÃ o Ä‘Ã¢y
           receiverId: 'ADMIN',
-          receiverName: 'Hỗ trợ Shop',
+          receiverName: 'Há»— trá»£ Shop',
           lastMessage: '',
           lastUpdated: now,
           status: 'ACTIVE',
@@ -1018,12 +1019,12 @@ export default function OrdersPage() {
       }
 
       const itemsText = getItems(order).map(item => `- ${item.quantity || 1}x ${getItemName(item)}`).join('\n');
-      const prefillText = `Chào bạn, Shop liên hệ về đơn hàng #${order.id.slice(-6).toUpperCase()}:\n${itemsText}\n\n`;
+      const prefillText = `ChÃ o báº¡n, Shop liÃªn há»‡ vá» Ä‘Æ¡n hÃ ng #${order.id.slice(-6).toUpperCase()}:\n${itemsText}\n\n`;
       navigate(`/chat?id=${channelId}`, { state: { activeChannelId: channelId, prefillText: prefillText } });
 
     } catch (error) {
       console.error(error);
-      toast.error('Lỗi khi mở Chat!');
+      toast.error('Lá»—i khi má»Ÿ Chat!');
     } finally {
       setIsProcessingId(null);
     }
@@ -1033,22 +1034,22 @@ export default function OrdersPage() {
       
       {status === 'PENDING' && (
         <>
-          {/* 🌟 LOGIC CHẶN LUỒNG: Đơn chuyển khoản nhưng CHƯA thanh toán -> KHÓA NÚT */}
+          {/* ðŸŒŸ LOGIC CHáº¶N LUá»’NG: ÄÆ¡n chuyá»ƒn khoáº£n nhÆ°ng CHÆ¯A thanh toÃ¡n -> KHÃ“A NÃšT */}
           {order.status === 'AWAITING_PAYMENT' && toPaymentStatus(order.paymentStatus) === 'UNPAID' ? (
             <button
               disabled={true}
               className="min-h-11 py-2.5 px-3 bg-slate-200 text-slate-500 text-sm font-bold rounded-xl border border-slate-300 shadow-inner cursor-not-allowed w-full"
-              title="Không thể duyệt. Khách hàng đang trong quá trình chuyển khoản."
+              title="KhÃ´ng thá»ƒ duyá»‡t. KhÃ¡ch hÃ ng Ä‘ang trong quÃ¡ trÃ¬nh chuyá»ƒn khoáº£n."
             >
-              Chờ khách thanh toán...
+              Chá» khÃ¡ch thanh toÃ¡n...
             </button>
           ) : (
             <button
               disabled={isProcessingId === order.id}
-              onClick={() => updateOrderStatus(order, 'CONFIRMED', 'Đã duyệt đơn! Chuyển sang chờ lấy hàng.')}
+              onClick={() => updateOrderStatus(order, 'CONFIRMED', 'ÄÃ£ duyá»‡t Ä‘Æ¡n! Chuyá»ƒn sang chá» láº¥y hÃ ng.')}
               className="min-h-11 py-2.5 px-3 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-bold rounded-xl shadow-lg shadow-indigo-200 transition-colors disabled:opacity-50 w-full"
             >
-              {isProcessingId === order.id ? 'Đang xử lý...' : 'Duyệt đơn (Chờ lấy hàng)'}
+              {isProcessingId === order.id ? 'Äang xá»­ lÃ½...' : 'Duyá»‡t Ä‘Æ¡n (Chá» láº¥y hÃ ng)'}
             </button>
           )}
         </>
@@ -1057,51 +1058,51 @@ export default function OrdersPage() {
       {status === 'CONFIRMED' && (
         <button
           disabled={isProcessingId === order.id}
-          onClick={() => updateOrderStatus(order, 'SHIPPING', 'Đã giao cho đơn vị vận chuyển!')}
+          onClick={() => updateOrderStatus(order, 'SHIPPING', 'ÄÃ£ giao cho Ä‘Æ¡n vá»‹ váº­n chuyá»ƒn!')}
           className="min-h-11 py-2.5 px-3 bg-blue-600 hover:bg-blue-700 text-white text-sm font-bold rounded-xl shadow-lg shadow-blue-200 transition-colors disabled:opacity-50"
         >
-          {isProcessingId === order.id ? 'Đang xử lý...' : 'Giao cho ĐVVC'}
+          {isProcessingId === order.id ? 'Äang xá»­ lÃ½...' : 'Giao cho ÄVVC'}
         </button>
       )}
 
       {status === 'SHIPPING' && (
         <button
           disabled={isProcessingId === order.id}
-          onClick={() => updateOrderStatus(order, 'COMPLETED', 'Đã giao hàng thành công!')}
+          onClick={() => updateOrderStatus(order, 'COMPLETED', 'ÄÃ£ giao hÃ ng thÃ nh cÃ´ng!')}
           className="min-h-11 py-2.5 px-3 bg-emerald-500 hover:bg-emerald-600 text-white text-sm font-bold rounded-xl shadow-lg shadow-emerald-200 transition-colors disabled:opacity-50"
         >
-          {isProcessingId === order.id ? 'Đang xử lý...' : 'Hoàn thành (Đã nhận)'}
+          {isProcessingId === order.id ? 'Äang xá»­ lÃ½...' : 'HoÃ n thÃ nh (ÄÃ£ nháº­n)'}
         </button>
       )}
 
-      {/* 🌟 NÚT XỬ LÝ YÊU CẦU TRẢ HÀNG TỪ KHÁCH (Đã dọn dẹp không còn bị trùng) */}
+      {/* ðŸŒŸ NÃšT Xá»¬ LÃ YÃŠU Cáº¦U TRáº¢ HÃ€NG Tá»ª KHÃCH (ÄÃ£ dá»n dáº¹p khÃ´ng cÃ²n bá»‹ trÃ¹ng) */}
       {status === 'RETURN_PENDING' && (
         <div className="flex flex-col gap-2 w-full mt-2">
             <button
               disabled={isProcessingId === order.id}
-              onClick={() => updateOrderStatus(order, 'RETURN_APPROVED', 'Đã duyệt! Chờ khách gửi trả hàng về Shop.')}
+              onClick={() => updateOrderStatus(order, 'RETURN_APPROVED', 'ÄÃ£ duyá»‡t! Chá» khÃ¡ch gá»­i tráº£ hÃ ng vá» Shop.')}
               className="min-h-11 py-2.5 px-3 bg-blue-600 hover:bg-blue-700 text-white text-sm font-bold rounded-xl shadow-lg transition-colors disabled:opacity-50"
             >
-              Chấp nhận (Chờ gửi trả)
+              Cháº¥p nháº­n (Chá» gá»­i tráº£)
             </button>
             <button
               disabled={isProcessingId === order.id}
               onClick={() => setRejectReturnDialog({ order, reason: '' })}
               className="min-h-11 py-2.5 px-3 bg-white border border-red-200 text-red-600 hover:bg-red-50 text-sm font-bold rounded-xl transition-colors disabled:opacity-50"
             >
-              Từ chối khiếu nại
+              Tá»« chá»‘i khiáº¿u náº¡i
             </button>
         </div>
       )}
 
-      {/* 🌟 NÚT XÁC NHẬN KHI SHOP NHẬN ĐƯỢC HÀNG TRẢ VỀ */}
+      {/* ðŸŒŸ NÃšT XÃC NHáº¬N KHI SHOP NHáº¬N ÄÆ¯á»¢C HÃ€NG TRáº¢ Vá»€ */}
       {status === 'RETURNING' && (
         <button
           disabled={isProcessingId === order.id}
           onClick={() => handleReceiveReturn(order)}
           className="min-h-11 py-2.5 px-3 bg-cyan-600 hover:bg-cyan-700 text-white text-sm font-bold rounded-xl shadow-lg transition-colors disabled:opacity-50 mt-2"
         >
-          {isProcessingId === order.id ? 'Đang xử lý...' : 'Đã nhận được hàng trả'}
+          {isProcessingId === order.id ? 'Äang xá»­ lÃ½...' : 'ÄÃ£ nháº­n Ä‘Æ°á»£c hÃ ng tráº£'}
         </button>
       )}
 
@@ -1111,36 +1112,36 @@ export default function OrdersPage() {
           onClick={() => setCancelDialog({ order, reason: CANCEL_REASONS[0], customReason: '' })}
           className="min-h-11 py-2.5 px-3 bg-white border border-red-200 text-red-600 hover:bg-red-50 text-sm font-bold rounded-xl transition-colors disabled:opacity-50"
         >
-          Hủy đơn
+          Há»§y Ä‘Æ¡n
         </button>
       )}
 
-      {/* 🌟 NÚT NÀY SẼ MỞ RA DIALOG UP BIÊN LAI HOÀN TIỀN (CHUNG CHO CẢ HỦY VÀ TRẢ HÀNG) */}
+      {/* ðŸŒŸ NÃšT NÃ€Y Sáº¼ Má»ž RA DIALOG UP BIÃŠN LAI HOÃ€N TIá»€N (CHUNG CHO Cáº¢ Há»¦Y VÃ€ TRáº¢ HÃ€NG) */}
       {status === 'REFUNDING' && (
         <button
           disabled={isProcessingId === order.id}
           onClick={() => openRefundDialog(order)}
           className="min-h-11 py-2.5 px-3 bg-fuchsia-100 border border-fuchsia-200 text-fuchsia-700 hover:bg-fuchsia-200 text-sm font-bold rounded-xl transition-colors disabled:opacity-50"
         >
-          Xử lý hoàn tiền
+          Xá»­ lÃ½ hoÃ n tiá»n
         </button>
       )}
 
-      {/* Thay thế nút Chi tiết cũ bằng Cụm 2 nút này */}
+      {/* Thay tháº¿ nÃºt Chi tiáº¿t cÅ© báº±ng Cá»¥m 2 nÃºt nÃ y */}
       <div className="grid grid-cols-2 gap-2 mt-1">
         <button
           onClick={() => handleChatWithUser(order)}
           disabled={isProcessingId === 'chat_' + order.id}
           className="min-h-11 py-2.5 px-2 bg-blue-50 border border-blue-200 text-blue-700 hover:bg-blue-100 text-[13px] font-bold rounded-xl transition-colors flex justify-center items-center gap-1.5"
         >
-          <MessageSquare className="w-4 h-4" /> {isProcessingId === 'chat_' + order.id ? '...' : 'Nhắn tin'}
+          <MessageSquare className="w-4 h-4" /> {isProcessingId === 'chat_' + order.id ? '...' : 'Nháº¯n tin'}
         </button>
 
         <button
           onClick={() => setSelectedOrder(order)}
           className="min-h-11 py-2.5 px-2 bg-slate-50 border border-slate-200 text-slate-700 hover:bg-slate-100 text-[13px] font-bold rounded-xl transition-colors flex justify-center items-center gap-1.5"
         >
-          <Eye className="w-4 h-4" /> Chi tiết
+          <Eye className="w-4 h-4" /> Chi tiáº¿t
         </button>
       </div>
     </div>
@@ -1148,10 +1149,10 @@ export default function OrdersPage() {
 
   const refundTotalPrice = refundDialog ? getTotal(refundDialog) : 0;
   const hasBankInfo = Boolean(refundDialog?.refundAccountNumber);
-  const refundBankLabel = refundDialog ? refundDialog.refundBankShortName || refundDialog.refundBankBin || 'Chưa cập nhật' : 'Chưa cập nhật';
+  const refundBankLabel = refundDialog ? refundDialog.refundBankShortName || refundDialog.refundBankBin || 'ChÆ°a cáº­p nháº­t' : 'ChÆ°a cáº­p nháº­t';
   const refundBankCode = refundDialog ? String(refundDialog.refundBankBin || refundDialog.refundBankShortName || '').trim() : '';
-  const refundAccountName = refundDialog?.refundAccountName || 'Chưa cập nhật';
-  const refundAccountNumber = refundDialog?.refundAccountNumber || 'Chưa cập nhật';
+  const refundAccountName = refundDialog?.refundAccountName || 'ChÆ°a cáº­p nháº­t';
+  const refundAccountNumber = refundDialog?.refundAccountNumber || 'ChÆ°a cáº­p nháº­t';
   const refundQrSrc =
     hasBankInfo && refundDialog && refundBankCode && refundDialog.refundAccountNumber
       ? `https://img.vietqr.io/image/${refundBankCode}-${refundDialog.refundAccountNumber}-compact2.png?amount=${refundTotalPrice}&addInfo=${encodeURIComponent(`HOAN TIEN DON ${refundDialog.id}`)}&accountName=${encodeURIComponent(refundDialog.refundAccountName || '')}`
@@ -1164,21 +1165,21 @@ export default function OrdersPage() {
           <div className="absolute inset-0 opacity-40 pointer-events-none" style={{ backgroundImage: 'radial-gradient(circle at 20% 20%, rgba(52,211,153,0.22), transparent 0), radial-gradient(circle at 80% 0%, rgba(45,212,191,0.18), transparent 0)' }} />
           <div className="relative flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
             <div className="max-w-2xl">
-              <p className="text-[11px] uppercase tracking-[0.3em] text-emerald-300 font-black">Xử lý Đơn hàng</p>
-              <h1 className="mt-2 text-2xl sm:text-3xl font-black tracking-tight">Danh sách Đơn hàng</h1>
-              <p className="mt-2 text-sm sm:text-base text-slate-300 leading-relaxed">Duyệt đơn, theo dõi vận chuyển và xử lý khiếu nại, hoàn tiền.</p>
+              <p className="text-[11px] uppercase tracking-[0.3em] text-emerald-300 font-black">Xá»­ lÃ½ ÄÆ¡n hÃ ng</p>
+              <h1 className="mt-2 text-2xl sm:text-3xl font-black tracking-tight">Danh sÃ¡ch ÄÆ¡n hÃ ng</h1>
+              <p className="mt-2 text-sm sm:text-base text-slate-300 leading-relaxed">Duyá»‡t Ä‘Æ¡n, theo dÃµi váº­n chuyá»ƒn vÃ  xá»­ lÃ½ khiáº¿u náº¡i, hoÃ n tiá»n.</p>
             </div>
             <div className="grid grid-cols-3 gap-3 w-full lg:w-auto lg:min-w-[420px]">
               <div className="rounded-2xl bg-white/10 border border-white/10 px-4 py-3">
-                <p className="text-[11px] uppercase tracking-widest text-slate-300 font-semibold">Cần duyệt</p>
+                <p className="text-[11px] uppercase tracking-widest text-slate-300 font-semibold">Cáº§n duyá»‡t</p>
                 <p className="mt-1 text-2xl font-black text-amber-400">{stats.pending}</p>
               </div>
               <div className="rounded-2xl bg-white/10 border border-white/10 px-4 py-3">
-                <p className="text-[11px] uppercase tracking-widest text-slate-300 font-semibold">Đang giao</p>
+                <p className="text-[11px] uppercase tracking-widest text-slate-300 font-semibold">Äang giao</p>
                 <p className="mt-1 text-2xl font-black text-blue-300">{stats.shipping}</p>
               </div>
               <div className="rounded-2xl bg-white/10 border border-white/10 px-4 py-3">
-                <p className="text-[11px] uppercase tracking-widest text-slate-300 font-semibold">Tổng doanh thu</p>
+                <p className="text-[11px] uppercase tracking-widest text-slate-300 font-semibold">Tá»•ng doanh thu</p>
                 <p className="mt-1 text-xl font-black text-emerald-300">{formatMoney(stats.revenue)}</p>
               </div>
             </div>
@@ -1190,7 +1191,7 @@ export default function OrdersPage() {
             <Search className="w-5 h-5 absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
             <input
               type="text"
-              placeholder="Tìm theo mã đơn, tên, SĐT, địa chỉ..."
+              placeholder="TÃ¬m theo mÃ£ Ä‘Æ¡n, tÃªn, SÄT, Ä‘á»‹a chá»‰..."
               value={searchInput}
               onChange={(e) => setSearchInput(e.target.value)}
               className="w-full pl-11 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:bg-white focus:ring-2 focus:ring-emerald-100 focus:border-emerald-500 transition-all text-sm font-medium"
@@ -1214,14 +1215,14 @@ export default function OrdersPage() {
               <button
                 onClick={() => setViewMode('LIST')}
                 className={`h-9 w-9 rounded-lg grid place-items-center transition-colors ${viewMode === 'LIST' ? 'bg-white text-emerald-700 shadow' : 'text-slate-500 hover:text-slate-700'}`}
-                title="Dạng danh sách"
+                title="Dáº¡ng danh sÃ¡ch"
               >
                 <LayoutList className="w-4 h-4" />
               </button>
               <button
                 onClick={() => setViewMode('KANBAN')}
                 className={`h-9 w-9 rounded-lg grid place-items-center transition-colors ${viewMode === 'KANBAN' ? 'bg-white text-emerald-700 shadow' : 'text-slate-500 hover:text-slate-700'}`}
-                title="Dạng Kanban"
+                title="Dáº¡ng Kanban"
               >
                 <KanbanSquare className="w-4 h-4" />
               </button>
@@ -1231,12 +1232,12 @@ export default function OrdersPage() {
 
         {isLoading ? (
           <div className="py-20 flex justify-center text-emerald-600 font-bold items-center gap-3">
-            <RefreshCw className="w-6 h-6 animate-spin" /> Đang tải dữ liệu đơn hàng...
+            <RefreshCw className="w-6 h-6 animate-spin" /> Äang táº£i dá»¯ liá»‡u Ä‘Æ¡n hÃ ng...
           </div>
         ) : filteredOrders.length === 0 ? (
           <div className="rounded-3xl border border-dashed border-slate-300 bg-white py-20 text-center text-slate-500 font-medium flex flex-col items-center">
             <ShoppingCart className="w-12 h-12 mb-4 text-slate-300" />
-            Không tìm thấy đơn hàng nào phù hợp.
+            KhÃ´ng tÃ¬m tháº¥y Ä‘Æ¡n hÃ ng nÃ o phÃ¹ há»£p.
           </div>
         ) : (
           <>
@@ -1261,19 +1262,19 @@ export default function OrdersPage() {
                         </div>
 
                         <div className="md:border-l border-slate-100 md:pl-6">
-                          <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-2">Sản phẩm ({items.length})</p>
+                          <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-2">Sáº£n pháº©m ({items.length})</p>
                           <div className="space-y-1.5">
                             {items.slice(0, 2).map((item, idx) => (
                               <p key={idx} className="text-sm text-slate-700 truncate font-medium">
                                 <span className="font-bold text-blue-600">{item.quantity || 1}x</span> {getItemName(item)}
                               </p>
                             ))}
-                            {items.length > 2 && <p className="text-xs font-bold text-slate-400 italic">...và {items.length - 2} sản phẩm khác</p>}
+                            {items.length > 2 && <p className="text-xs font-bold text-slate-400 italic">...vÃ  {items.length - 2} sáº£n pháº©m khÃ¡c</p>}
                           </div>
                         </div>
 
                         <div className="md:border-l border-slate-100 md:pl-6 flex flex-col justify-center">
-                          <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-1">Tổng cộng</p>
+                          <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-1">Tá»•ng cá»™ng</p>
                           <p className="text-xl font-black text-emerald-600 mb-2">{formatMoney(getTotal(order))}</p>
                           <p className="text-xs font-medium text-slate-400">{formatTime(order.createdAt)}</p>
                         </div>
@@ -1300,7 +1301,7 @@ export default function OrdersPage() {
 
                         <div className="space-y-3 max-h-[560px] overflow-y-auto custom-scrollbar pr-1">
                           {columnOrders.length === 0 ? (
-                            <div className="rounded-xl border border-dashed border-slate-300 bg-white p-4 text-xs text-slate-500 text-center">Không có đơn trong cột này</div>
+                            <div className="rounded-xl border border-dashed border-slate-300 bg-white p-4 text-xs text-slate-500 text-center">KhÃ´ng cÃ³ Ä‘Æ¡n trong cá»™t nÃ y</div>
                           ) : (
                             columnOrders.map((order) => {
                               const items = getItems(order);
@@ -1341,7 +1342,7 @@ export default function OrdersPage() {
 
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 bg-white border border-slate-200 rounded-2xl p-3 sm:p-4 mb-8">
               <p className="text-sm font-semibold text-slate-600">
-                Hiển thị {(safePage - 1) * pageSize + 1}-{Math.min(safePage * pageSize, filteredOrders.length)} / {filteredOrders.length} đơn hàng
+                Hiá»ƒn thá»‹ {(safePage - 1) * pageSize + 1}-{Math.min(safePage * pageSize, filteredOrders.length)} / {filteredOrders.length} Ä‘Æ¡n hÃ ng
               </p>
 
               <div className="flex items-center gap-2 flex-wrap justify-end">
@@ -1349,7 +1350,7 @@ export default function OrdersPage() {
                   value={pageSize}
                   onChange={(e) => setPageSize(Number(e.target.value))}
                   className="h-10 px-3 rounded-xl border border-slate-200 bg-slate-50 text-sm font-semibold text-slate-700 outline-none focus:ring-2 focus:ring-emerald-100"
-                  title="Số dòng mỗi trang"
+                  title="Sá»‘ dÃ²ng má»—i trang"
                 >
                   {PAGE_SIZE_OPTIONS.map((size) => (
                     <option key={size} value={size}>
@@ -1365,20 +1366,20 @@ export default function OrdersPage() {
                       if (e.key === 'Enter') jumpToPage();
                     }}
                     className="h-10 w-16 text-center rounded-xl border border-slate-200 bg-slate-50 text-sm font-semibold text-slate-700 outline-none focus:ring-2 focus:ring-emerald-100"
-                    title="Đi tới trang"
+                    title="Äi tá»›i trang"
                   />
                   <button
                     onClick={jumpToPage}
                     className="h-10 px-3 rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 text-sm font-semibold text-slate-700"
                   >
-                    Đi
+                    Äi
                   </button>
                 </div>
                 <button
                   onClick={() => setCurrentPage(1)}
                   disabled={safePage === 1}
                   className="h-10 w-10 grid place-items-center rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 disabled:opacity-50"
-                  title="Trang đầu"
+                  title="Trang Ä‘áº§u"
                 >
                   <ChevronsLeft className="w-4 h-4" />
                 </button>
@@ -1386,7 +1387,7 @@ export default function OrdersPage() {
                   onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
                   disabled={safePage === 1}
                   className="h-10 w-10 grid place-items-center rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 disabled:opacity-50"
-                  title="Trang trước"
+                  title="Trang trÆ°á»›c"
                 >
                   <ChevronLeft className="w-4 h-4" />
                 </button>
@@ -1403,7 +1404,7 @@ export default function OrdersPage() {
                   onClick={() => setCurrentPage(totalPages)}
                   disabled={safePage === totalPages}
                   className="h-10 w-10 grid place-items-center rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 disabled:opacity-50"
-                  title="Trang cuối"
+                  title="Trang cuá»‘i"
                 >
                   <ChevronsRight className="w-4 h-4" />
                 </button>
@@ -1421,7 +1422,7 @@ export default function OrdersPage() {
                 <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center text-blue-600"><ShoppingCart className="w-5 h-5" /></div>
                 <div>
                   <h3 className="font-black text-slate-900 text-lg flex items-center gap-2 flex-wrap">
-                    Đơn hàng #{selectedOrder.id.slice(-6).toUpperCase()}
+                    ÄÆ¡n hÃ ng #{selectedOrder.id.slice(-6).toUpperCase()}
                     {getStatusBadge(toStatus(selectedOrder.status))}
                     {getSmartPaymentBadge(selectedOrder)}
                   </h3>
@@ -1433,18 +1434,22 @@ export default function OrdersPage() {
 
             <div className="p-6 overflow-y-auto custom-scrollbar flex-1 bg-white">
               
-              {/* 🌟 KHU VỰC KHIẾU NẠI TRẢ HÀNG */}
+              {/* ðŸŒŸ KHU Vá»°C KHIáº¾U Náº I TRáº¢ HÃ€NG */}
               {['RETURN_PENDING', 'RETURN_APPROVED', 'RETURNING', 'RETURN_REJECTED', 'REFUNDING', 'REFUNDED'].includes(toStatus(selectedOrder.status)) && selectedOrder.returnReason && (
                 <div className="mb-6 rounded-2xl border border-orange-200 bg-orange-50 p-4">
-                  <h4 className="text-xs font-black uppercase tracking-widest text-orange-800 mb-2 flex items-center gap-2"><AlertTriangle className="w-4 h-4"/> Yêu cầu Trả hàng / Khiếu nại từ khách</h4>
-                  <p className="font-bold text-slate-900">Lý do: <span className="text-orange-700">{selectedOrder.returnReason}</span></p>
-                  <p className="text-sm text-slate-700 mt-1">Chi tiết: {selectedOrder.returnDescription}</p>
+                  <h4 className="text-xs font-black uppercase tracking-widest text-orange-800 mb-2 flex items-center gap-2"><AlertTriangle className="w-4 h-4"/> YÃªu cáº§u Tráº£ hÃ ng / Khiáº¿u náº¡i tá»« khÃ¡ch</h4>
+                  <p className="font-bold text-slate-900">LÃ½ do: <span className="text-orange-700">{selectedOrder.returnReason}</span></p>
+                  <p className="text-sm text-slate-700 mt-1">Chi tiáº¿t: {selectedOrder.returnDescription}</p>
                   
                   {selectedOrder.returnImages && selectedOrder.returnImages.length > 0 && (
                     <div className="flex gap-3 mt-3 overflow-x-auto">
                       {selectedOrder.returnImages.map((img, idx) => (
-                        <a key={idx} href={img} target="_blank" rel="noreferrer" title="Click để phóng to">
-                          <img src={img} alt="Bằng chứng" className="w-24 h-24 object-cover rounded-xl border border-orange-200 shadow-sm hover:scale-105 transition-transform" />
+                        <a key={idx} href={img} target="_blank" rel="noreferrer" title="Click Ä‘á»ƒ phÃ³ng to">
+                          {isVideoEvidenceUrl(img) ? (
+                            <video src={img} className="w-24 h-24 object-cover rounded-xl border border-orange-200 shadow-sm hover:scale-105 transition-transform bg-black" muted controls />
+                          ) : (
+                            <img src={img} alt="Báº±ng chá»©ng" className="w-24 h-24 object-cover rounded-xl border border-orange-200 shadow-sm hover:scale-105 transition-transform" />
+                          )}
                         </a>
                       ))}
                     </div>
@@ -1452,22 +1457,22 @@ export default function OrdersPage() {
 
                   {toStatus(selectedOrder.status) === 'RETURN_REJECTED' && selectedOrder.cancelReason && (
                      <div className="mt-3 pt-3 border-t border-orange-200">
-                        <p className="text-sm font-bold text-red-600">Shop từ chối: {selectedOrder.cancelReason}</p>
+                        <p className="text-sm font-bold text-red-600">Shop tá»« chá»‘i: {selectedOrder.cancelReason}</p>
                      </div>
                   )}
-                  {/* 🌟 THÊM: Hiển thị mã vận đơn nếu khách đã nhập */}
+                  {/* ðŸŒŸ THÃŠM: Hiá»ƒn thá»‹ mÃ£ váº­n Ä‘Æ¡n náº¿u khÃ¡ch Ä‘Ã£ nháº­p */}
                   {selectedOrder.returnTrackingCode && (
                     <div className="mt-3 pt-3 border-t border-orange-200">
-                        <p className="text-sm font-bold text-slate-800">Mã vận đơn hoàn hàng (Khách gửi): <span className="text-cyan-700">{selectedOrder.returnTrackingCode}</span></p>
+                        <p className="text-sm font-bold text-slate-800">MÃ£ váº­n Ä‘Æ¡n hoÃ n hÃ ng (KhÃ¡ch gá»­i): <span className="text-cyan-700">{selectedOrder.returnTrackingCode}</span></p>
                     </div>
                   )}
                 </div>
               )}
 
-              {/* 🌟 KHU VỰC HỦY ĐƠN */}
+              {/* ðŸŒŸ KHU Vá»°C Há»¦Y ÄÆ N */}
               {['CANCELLED'].includes(toStatus(selectedOrder.status)) && selectedOrder.cancelReason && (
                 <div className="mb-4 rounded-2xl border border-red-200 bg-red-50 px-4 py-3">
-                  <p className="text-xs font-black uppercase tracking-widest text-red-600 mb-1">Lý do hủy đơn</p>
+                  <p className="text-xs font-black uppercase tracking-widest text-red-600 mb-1">LÃ½ do há»§y Ä‘Æ¡n</p>
                   <p className="text-sm font-semibold text-red-800">{selectedOrder.cancelReason}</p>
                 </div>
               )}
@@ -1475,31 +1480,31 @@ export default function OrdersPage() {
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                 <div className="lg:col-span-1 space-y-6">
                   <div className="bg-slate-50 rounded-2xl p-4 border border-slate-100">
-                    <h4 className="text-xs font-black uppercase tracking-widest text-slate-400 mb-4 flex items-center gap-2"><User className="w-4 h-4" /> Khách hàng</h4>
+                    <h4 className="text-xs font-black uppercase tracking-widest text-slate-400 mb-4 flex items-center gap-2"><User className="w-4 h-4" /> KhÃ¡ch hÃ ng</h4>
                     <p className="font-bold text-slate-900 mb-1">{getName(selectedOrder)}</p>
                     <div className="flex items-center gap-2 text-sm text-slate-600 mb-1"><Phone className="w-3.5 h-3.5 text-slate-400" /> {getPhone(selectedOrder)}</div>
                     <div className="flex items-start gap-2 text-sm text-slate-600"><MapPin className="w-3.5 h-3.5 text-slate-400 shrink-0 mt-0.5" /> <span>{getAddress(selectedOrder)}</span></div>
                   </div>
 
                   <div className="bg-slate-50 rounded-2xl p-4 border border-slate-100">
-                    <h4 className="text-xs font-black uppercase tracking-widest text-slate-400 mb-4 flex items-center gap-2"><Wallet className="w-4 h-4" /> Thanh toán</h4>
+                    <h4 className="text-xs font-black uppercase tracking-widest text-slate-400 mb-4 flex items-center gap-2"><Wallet className="w-4 h-4" /> Thanh toÃ¡n</h4>
                     {getPromoCodeTags(selectedOrder) && <div className="mb-3">{getPromoCodeTags(selectedOrder)}</div>}
                     {getDiscountBadge(selectedOrder) && <div className="mb-3">{getDiscountBadge(selectedOrder)}</div>}
                     <div className="flex justify-between items-center text-sm font-medium text-slate-600 mb-2">
-                      <span>Trạng thái:</span>
+                      <span>Tráº¡ng thÃ¡i:</span>
                       {getSmartPaymentBadge(selectedOrder)}
                     </div>
                     {['CANCELLED', 'REFUNDING', 'REFUNDED'].includes(toStatus(selectedOrder.status)) && selectedOrder.cancelReason && (
                       <p className="mb-2 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs font-semibold text-red-700">
-                        Lý do: {selectedOrder.cancelReason} (Bởi: {String(selectedOrder.cancelledBy || '').toUpperCase() === 'ADMIN' ? 'Shop' : 'Khách hàng'})
+                        LÃ½ do: {selectedOrder.cancelReason} (Bá»Ÿi: {String(selectedOrder.cancelledBy || '').toUpperCase() === 'ADMIN' ? 'Shop' : 'KhÃ¡ch hÃ ng'})
                       </p>
                     )}
                     <div className="flex justify-between items-center text-sm font-medium text-slate-600 mb-2">
-                      <span>Phương thức:</span>
-                      <span className="text-slate-900 font-bold">{selectedOrder.paymentMethod || 'COD (Tiền mặt)'}</span>
+                      <span>PhÆ°Æ¡ng thá»©c:</span>
+                      <span className="text-slate-900 font-bold">{selectedOrder.paymentMethod || 'COD (Tiá»n máº·t)'}</span>
                     </div>
                     <div className="flex justify-between items-center text-sm font-medium text-slate-600 mb-2">
-                      <span>Tạm tính:</span>
+                      <span>Táº¡m tÃ­nh:</span>
                       <span>{formatMoney(getSubTotal(selectedOrder))}</span>
                     </div>
                     <div className="flex justify-between items-center text-sm font-medium text-slate-600 mb-2">
@@ -1507,40 +1512,40 @@ export default function OrdersPage() {
                       <span className="text-slate-900 font-bold">{getVoucherLabel(selectedOrder)}</span>
                     </div>
                     <div className="flex justify-between items-center text-sm font-medium text-slate-600 mb-2">
-                      <span>Giảm giá:</span>
+                      <span>Giáº£m giÃ¡:</span>
                       <span className="text-rose-600 font-bold">-{formatMoney(getDiscountAmount(selectedOrder))}</span>
                     </div>
                     <div className="flex justify-between items-center text-sm font-medium text-slate-600 mb-3 pb-3 border-b border-slate-200">
-                      <span>Phí ship:</span>
-                      <span>{isFreeShip(selectedOrder) ? 'Miễn phí' : formatMoney(getShippingFee(selectedOrder))}</span>
+                      <span>PhÃ­ ship:</span>
+                      <span>{isFreeShip(selectedOrder) ? 'Miá»…n phÃ­' : formatMoney(getShippingFee(selectedOrder))}</span>
                     </div>
                     <div className="flex justify-between items-center text-base">
-                      <span className="font-bold text-slate-900">Tổng cộng:</span>
+                      <span className="font-bold text-slate-900">Tá»•ng cá»™ng:</span>
                       <span className="font-black text-emerald-600 text-lg">{formatMoney(getTotal(selectedOrder))}</span>
                     </div>
                   </div>
 
-                  {/* 🌟 KHU VỰC THÔNG TIN HOÀN TIỀN CÓ MÃ VIETQR */}
+                  {/* ðŸŒŸ KHU Vá»°C THÃ”NG TIN HOÃ€N TIá»€N CÃ“ MÃƒ VIETQR */}
                   {toStatus(selectedOrder.status) === 'REFUNDING' && selectedOrder.refundAccountNumber && (
                     <div className="bg-fuchsia-50 rounded-2xl p-4 border border-fuchsia-100 animate-in slide-in-from-bottom-2">
                       <h4 className="text-xs font-black uppercase tracking-widest text-fuchsia-800 mb-4 flex items-center gap-2">
-                        <Building2 className="w-4 h-4" /> Thông tin hoàn tiền
+                        <Building2 className="w-4 h-4" /> ThÃ´ng tin hoÃ n tiá»n
                       </h4>
                       <div className="flex flex-col xl:flex-row gap-4 items-center">
                         <div className="flex-1 space-y-3 w-full">
                           <div>
-                            <p className="text-[10px] uppercase font-bold text-fuchsia-600/70 mb-0.5">Ngân hàng</p>
+                            <p className="text-[10px] uppercase font-bold text-fuchsia-600/70 mb-0.5">NgÃ¢n hÃ ng</p>
                             <p className="text-sm font-bold text-fuchsia-950">{selectedOrder.refundBankShortName || selectedOrder.refundBankBin}</p>
                           </div>
                           <div>
-                            <p className="text-[10px] uppercase font-bold text-fuchsia-600/70 mb-0.5">Chủ tài khoản</p>
+                            <p className="text-[10px] uppercase font-bold text-fuchsia-600/70 mb-0.5">Chá»§ tÃ i khoáº£n</p>
                             <p className="text-sm font-bold text-fuchsia-950 uppercase">{selectedOrder.refundAccountName}</p>
                           </div>
                           <div>
-                            <p className="text-[10px] uppercase font-bold text-fuchsia-600/70 mb-0.5">Số tài khoản</p>
+                            <p className="text-[10px] uppercase font-bold text-fuchsia-600/70 mb-0.5">Sá»‘ tÃ i khoáº£n</p>
                             <div className="flex items-center gap-2">
                               <p className="text-lg font-black text-fuchsia-700 tracking-wider">{selectedOrder.refundAccountNumber}</p>
-                              <button onClick={() => handleCopyAndCatch(selectedOrder.refundAccountNumber || '', 'Số tài khoản')} className="p-1.5 bg-white border border-fuchsia-200 hover:bg-fuchsia-100 text-fuchsia-600 rounded-lg transition-colors shadow-sm" title="Copy STK">
+                              <button onClick={() => handleCopyAndCatch(selectedOrder.refundAccountNumber || '', 'Sá»‘ tÃ i khoáº£n')} className="p-1.5 bg-white border border-fuchsia-200 hover:bg-fuchsia-100 text-fuchsia-600 rounded-lg transition-colors shadow-sm" title="Copy STK">
                                 <Copy className="w-4 h-4" />
                               </button>
                             </div>
@@ -1553,7 +1558,7 @@ export default function OrdersPage() {
                             alt="VietQR"
                             className="w-32 h-32 object-contain"
                           />
-                          <p className="text-[10px] font-bold text-slate-500 mt-2 flex items-center gap-1"><QrCode className="w-3 h-3"/> Quét để chuyển khoản</p>
+                          <p className="text-[10px] font-bold text-slate-500 mt-2 flex items-center gap-1"><QrCode className="w-3 h-3"/> QuÃ©t Ä‘á»ƒ chuyá»ƒn khoáº£n</p>
                         </div>
                       </div>
                     </div>
@@ -1561,15 +1566,15 @@ export default function OrdersPage() {
                 </div>
 
                 <div className="lg:col-span-2">
-                  <h4 className="text-xs font-black uppercase tracking-widest text-slate-400 mb-4 flex items-center gap-2"><Package className="w-4 h-4" /> Chi tiết sản phẩm</h4>
+                  <h4 className="text-xs font-black uppercase tracking-widest text-slate-400 mb-4 flex items-center gap-2"><Package className="w-4 h-4" /> Chi tiáº¿t sáº£n pháº©m</h4>
                   <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden">
                     <table className="w-full text-left border-collapse">
                       <thead>
                         <tr className="bg-gradient-to-r from-slate-50 to-slate-100 border-b border-slate-200 text-xs font-bold text-slate-500 uppercase tracking-wide">
                           <th className="p-4 w-12 text-center">SL</th>
-                          <th className="p-4">Sản phẩm</th>
-                          <th className="p-4 text-right">Đơn giá</th>
-                          <th className="p-4 text-right">Thành tiền</th>
+                          <th className="p-4">Sáº£n pháº©m</th>
+                          <th className="p-4 text-right">ÄÆ¡n giÃ¡</th>
+                          <th className="p-4 text-right">ThÃ nh tiá»n</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100">
@@ -1617,7 +1622,7 @@ export default function OrdersPage() {
 
             <div className="px-6 py-4 border-t border-slate-100 bg-slate-50 flex justify-end gap-3 shrink-0">
               <button onClick={() => setSelectedOrder(null)} className="px-5 py-2.5 rounded-xl border border-slate-300 text-slate-700 font-bold hover:bg-slate-100 transition-colors cursor-pointer">
-                Đóng
+                ÄÃ³ng
               </button>
             </div>
           </div>
@@ -1629,8 +1634,8 @@ export default function OrdersPage() {
           <div className="w-full max-w-2xl rounded-3xl border border-fuchsia-100 bg-white shadow-2xl animate-in fade-in zoom-in-95 duration-200 overflow-hidden flex flex-col max-h-[90vh]">
             <div className="px-6 py-4 border-b border-slate-100 bg-gradient-to-r from-fuchsia-50 to-indigo-50 flex items-center justify-between shrink-0">
               <div>
-                <h3 className="text-lg font-black text-slate-900">Xử lý Hoàn Tiền</h3>
-                <p className="text-xs font-semibold text-slate-500 mt-1">Đơn #{refundDialog.id.slice(-6).toUpperCase()}</p>
+                <h3 className="text-lg font-black text-slate-900">Xá»­ lÃ½ HoÃ n Tiá»n</h3>
+                <p className="text-xs font-semibold text-slate-500 mt-1">ÄÆ¡n #{refundDialog.id.slice(-6).toUpperCase()}</p>
               </div>
               <button
                 onClick={closeRefundDialog}
@@ -1644,37 +1649,37 @@ export default function OrdersPage() {
             <div className="p-6 grid grid-cols-1 lg:grid-cols-2 gap-6 flex-1 overflow-y-auto custom-scrollbar">
               <div className={`space-y-4 ${hasBankInfo ? '' : 'lg:col-span-2'}`}>
                 <div className="rounded-2xl border border-fuchsia-100 bg-fuchsia-50/60 p-4">
-                  <p className="text-xs uppercase tracking-widest font-bold text-fuchsia-600">Tổng tiền cần hoàn</p>
+                  <p className="text-xs uppercase tracking-widest font-bold text-fuchsia-600">Tá»•ng tiá»n cáº§n hoÃ n</p>
                   <p className="mt-1 text-2xl font-black text-fuchsia-700">{formatMoney(refundTotalPrice)}</p>
                 </div>
 
                 {hasBankInfo ? (
                   <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 space-y-3">
-                    <h4 className="text-xs uppercase tracking-widest font-black text-slate-500">Thông tin ngân hàng khách</h4>
+                    <h4 className="text-xs uppercase tracking-widest font-black text-slate-500">ThÃ´ng tin ngÃ¢n hÃ ng khÃ¡ch</h4>
                     <div>
-                      <p className="text-[11px] font-bold text-slate-400 uppercase">Ngân hàng</p>
+                      <p className="text-[11px] font-bold text-slate-400 uppercase">NgÃ¢n hÃ ng</p>
                       <p className="text-sm font-bold text-slate-900">{refundBankLabel}</p>
                     </div>
                     <div>
-                      <p className="text-[11px] font-bold text-slate-400 uppercase">Tên tài khoản</p>
+                      <p className="text-[11px] font-bold text-slate-400 uppercase">TÃªn tÃ i khoáº£n</p>
                       <p className="text-sm font-bold text-slate-900">{refundAccountName}</p>
                     </div>
                     <div>
-                      <p className="text-[11px] font-bold text-slate-400 uppercase">Số tài khoản</p>
+                      <p className="text-[11px] font-bold text-slate-400 uppercase">Sá»‘ tÃ i khoáº£n</p>
                       <p className="text-base font-black text-slate-900 tracking-wide">{refundAccountNumber}</p>
                     </div>
                   </div>
                 ) : (
                   <div className="rounded-2xl border border-amber-300 bg-amber-50 px-4 py-3">
-                    <p className="text-xs font-black uppercase tracking-widest text-amber-700 mb-1">Thiếu thông tin ngân hàng</p>
+                    <p className="text-xs font-black uppercase tracking-widest text-amber-700 mb-1">Thiáº¿u thÃ´ng tin ngÃ¢n hÃ ng</p>
                     <p className="text-sm font-semibold text-amber-900">
-                      Đơn hàng do Shop hủy hoặc Khách chưa cung cấp thẻ. Vui lòng check tin nhắn Chat để lấy Số tài khoản chuyển khoản.
+                      ÄÆ¡n hÃ ng do Shop há»§y hoáº·c KhÃ¡ch chÆ°a cung cáº¥p tháº». Vui lÃ²ng check tin nháº¯n Chat Ä‘á»ƒ láº¥y Sá»‘ tÃ i khoáº£n chuyá»ƒn khoáº£n.
                     </p>
                   </div>
                 )}
 
                 <div className="rounded-2xl border border-slate-200 bg-white p-4">
-                  <p className="text-xs uppercase tracking-widest font-black text-slate-500 mb-2">Upload biên lai chuyển khoản</p>
+                  <p className="text-xs uppercase tracking-widest font-black text-slate-500 mb-2">Upload biÃªn lai chuyá»ƒn khoáº£n</p>
                   <input
                     type="file"
                     accept="image/*"
@@ -1684,7 +1689,7 @@ export default function OrdersPage() {
                   />
                   {refundReceiptPreview && (
                     <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 p-2 inline-block">
-                      <img src={refundReceiptPreview} alt="Biên lai" className="w-full max-h-48 object-contain rounded-lg" />
+                      <img src={refundReceiptPreview} alt="BiÃªn lai" className="w-full max-h-48 object-contain rounded-lg" />
                     </div>
                   )}
                 </div>
@@ -1692,10 +1697,10 @@ export default function OrdersPage() {
 
               {hasBankInfo && (
                 <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 flex flex-col">
-                  <h4 className="text-xs uppercase tracking-widest font-black text-slate-500 mb-3">Mã VietQR</h4>
+                  <h4 className="text-xs uppercase tracking-widest font-black text-slate-500 mb-3">MÃ£ VietQR</h4>
                   <div className="flex-1 rounded-xl border border-fuchsia-100 bg-white p-3 flex flex-col items-center justify-center">
-                    <img src={refundQrSrc} alt="VietQR hoàn tiền" className="w-64 max-w-full aspect-square object-contain" />
-                    <p className="mt-2 text-xs font-semibold text-slate-500 text-center">Quét mã để chuyển khoản nhanh cho khách</p>
+                    <img src={refundQrSrc} alt="VietQR hoÃ n tiá»n" className="w-64 max-w-full aspect-square object-contain" />
+                    <p className="mt-2 text-xs font-semibold text-slate-500 text-center">QuÃ©t mÃ£ Ä‘á»ƒ chuyá»ƒn khoáº£n nhanh cho khÃ¡ch</p>
                   </div>
                 </div>
               )}
@@ -1707,14 +1712,14 @@ export default function OrdersPage() {
                 disabled={isSubmittingRefund}
                 className="px-5 py-2.5 rounded-xl border border-slate-300 text-slate-700 font-bold hover:bg-slate-100 transition-colors disabled:opacity-50"
               >
-                Đóng
+                ÄÃ³ng
               </button>
               <button
                 onClick={handleConfirmRefundTransfer}
                 disabled={isSubmittingRefund}
                 className="px-5 py-2.5 rounded-xl bg-fuchsia-600 text-white font-bold hover:bg-fuchsia-700 transition-colors disabled:opacity-60"
               >
-                {isSubmittingRefund ? 'Đang xử lý...' : 'Xác nhận Đã Chuyển Khoản'}
+                {isSubmittingRefund ? 'Äang xá»­ lÃ½...' : 'XÃ¡c nháº­n ÄÃ£ Chuyá»ƒn Khoáº£n'}
               </button>
             </div>
           </div>
@@ -1728,9 +1733,9 @@ export default function OrdersPage() {
               <div className="mx-auto h-14 w-14 rounded-full bg-red-100 text-red-600 grid place-items-center mb-4">
                 <AlertTriangle className="w-7 h-7" />
               </div>
-              <h3 className="text-center text-xl font-black text-slate-900">Xác nhận hủy đơn hàng?</h3>
+              <h3 className="text-center text-xl font-black text-slate-900">XÃ¡c nháº­n há»§y Ä‘Æ¡n hÃ ng?</h3>
               <p className="mt-2 text-center text-sm text-slate-600">
-                Đơn #{cancelDialog.order.id.slice(-6).toUpperCase()} sẽ được xử lý theo trạng thái thanh toán hiện tại.
+                ÄÆ¡n #{cancelDialog.order.id.slice(-6).toUpperCase()} sáº½ Ä‘Æ°á»£c xá»­ lÃ½ theo tráº¡ng thÃ¡i thanh toÃ¡n hiá»‡n táº¡i.
               </p>
               <div className="mt-4 flex items-center justify-center gap-2">
                 {getStatusBadge(toStatus(cancelDialog.order.status))}
@@ -1738,7 +1743,7 @@ export default function OrdersPage() {
               </div>
 
               <div className="mt-5 rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                <p className="text-xs font-black uppercase tracking-widest text-slate-500 mb-3">Lý do hủy đơn</p>
+                <p className="text-xs font-black uppercase tracking-widest text-slate-500 mb-3">LÃ½ do há»§y Ä‘Æ¡n</p>
                 <div className="space-y-2">
                   {CANCEL_REASONS.map((reason) => (
                     <label key={reason} className="flex items-center gap-3 text-sm font-semibold text-slate-700 cursor-pointer">
@@ -1768,7 +1773,7 @@ export default function OrdersPage() {
                         prev ? { ...prev, customReason: e.target.value } : prev
                       )
                     }
-                    placeholder="Nhập lý do cụ thể..."
+                    placeholder="Nháº­p lÃ½ do cá»¥ thá»ƒ..."
                     className="mt-3 w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-white outline-none focus:ring-2 focus:ring-red-100 focus:border-red-300 text-sm font-medium"
                   />
                 )}
@@ -1780,7 +1785,7 @@ export default function OrdersPage() {
                 onClick={() => setCancelDialog(null)}
                 className="flex-1 rounded-xl border border-slate-300 py-2.5 text-sm font-bold text-slate-700 hover:bg-slate-100 transition-colors"
               >
-                Đóng
+                ÄÃ³ng
               </button>
               <button
                 onClick={handleConfirmCancel}
@@ -1790,13 +1795,13 @@ export default function OrdersPage() {
                 }
                 className="flex-1 rounded-xl bg-red-600 py-2.5 text-sm font-bold text-white hover:bg-red-700 transition-colors disabled:opacity-60"
               >
-                {isProcessingId === cancelDialog.order.id ? 'Đang xử lý...' : 'Xác nhận hủy'}
+                {isProcessingId === cancelDialog.order.id ? 'Äang xá»­ lÃ½...' : 'XÃ¡c nháº­n há»§y'}
               </button>
             </div>
           </div>
         </div>
       )}
-      {/* 🌟 DIALOG TỪ CHỐI KHIẾU NẠI MỚI */}
+      {/* ðŸŒŸ DIALOG Tá»ª CHá»I KHIáº¾U Náº I Má»šI */}
       {rejectReturnDialog && (
         <div className="fixed inset-0 z-[120] bg-slate-950/70 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="w-full max-w-md rounded-3xl border border-red-100 bg-white shadow-2xl animate-in fade-in zoom-in-95 duration-200 overflow-hidden">
@@ -1804,13 +1809,13 @@ export default function OrdersPage() {
               <div className="mx-auto h-14 w-14 rounded-full bg-red-100 text-red-600 grid place-items-center mb-4">
                 <XCircle className="w-7 h-7" />
               </div>
-              <h3 className="text-center text-xl font-black text-slate-900">Từ chối khiếu nại?</h3>
+              <h3 className="text-center text-xl font-black text-slate-900">Tá»« chá»‘i khiáº¿u náº¡i?</h3>
               <p className="mt-2 text-center text-sm text-slate-600">
-                Yêu cầu trả hàng của đơn #{rejectReturnDialog.order.id.slice(-6).toUpperCase()} sẽ bị từ chối và đơn hàng sẽ được đóng lại.
+                YÃªu cáº§u tráº£ hÃ ng cá»§a Ä‘Æ¡n #{rejectReturnDialog.order.id.slice(-6).toUpperCase()} sáº½ bá»‹ tá»« chá»‘i vÃ  Ä‘Æ¡n hÃ ng sáº½ Ä‘Æ°á»£c Ä‘Ã³ng láº¡i.
               </p>
 
               <div className="mt-5 rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                <p className="text-xs font-black uppercase tracking-widest text-slate-500 mb-3">Lý do từ chối</p>
+                <p className="text-xs font-black uppercase tracking-widest text-slate-500 mb-3">LÃ½ do tá»« chá»‘i</p>
                 <input
                   type="text"
                   value={rejectReturnDialog.reason}
@@ -1819,7 +1824,7 @@ export default function OrdersPage() {
                       prev ? { ...prev, reason: e.target.value } : prev
                     )
                   }
-                  placeholder="Ví dụ: Sản phẩm hỏng do lỗi người dùng..."
+                  placeholder="VÃ­ dá»¥: Sáº£n pháº©m há»ng do lá»—i ngÆ°á»i dÃ¹ng..."
                   className="w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-white outline-none focus:ring-2 focus:ring-red-100 focus:border-red-300 text-sm font-medium"
                   autoFocus
                 />
@@ -1831,14 +1836,14 @@ export default function OrdersPage() {
                 onClick={() => setRejectReturnDialog(null)}
                 className="flex-1 rounded-xl border border-slate-300 py-2.5 text-sm font-bold text-slate-700 hover:bg-slate-100 transition-colors"
               >
-                Hủy
+                Há»§y
               </button>
               <button
                 onClick={handleConfirmRejectReturn}
                 disabled={isProcessingId === rejectReturnDialog.order.id || rejectReturnDialog.reason.trim() === ''}
                 className="flex-1 rounded-xl bg-red-600 py-2.5 text-sm font-bold text-white hover:bg-red-700 transition-colors disabled:opacity-60"
               >
-                {isProcessingId === rejectReturnDialog.order.id ? 'Đang xử lý...' : 'Xác nhận Từ chối'}
+                {isProcessingId === rejectReturnDialog.order.id ? 'Äang xá»­ lÃ½...' : 'XÃ¡c nháº­n Tá»« chá»‘i'}
               </button>
             </div>
           </div>

@@ -526,11 +526,13 @@ export default function ChatPage() {
 
   const displayedMessages = useMemo(() => {
     const activeChannelId = selectedChannel?.id;
+    const serverMessageIds = new Set(messages.map((message) => message.id));
     const activeLocalMessages = activeChannelId
       ? localMessages.filter((message) => message.channelId === activeChannelId)
       : [];
+    const visibleLocalMessages = activeLocalMessages.filter((message) => !serverMessageIds.has(message.id));
 
-    return [...messages, ...activeLocalMessages].sort(
+    return [...messages, ...visibleLocalMessages].sort(
       (first, second) => getMessageMillis(first.timestamp) - getMessageMillis(second.timestamp)
     );
   }, [localMessages, messages, selectedChannel?.id]);
@@ -571,8 +573,11 @@ export default function ChatPage() {
     }
   };
 
-  const sendSingleMessage = async (channelId: string, payload: Omit<ChatMessage, 'id'>) => {
-    await addDoc(collection(db, 'channels', channelId, 'messages'), payload);
+  const sendSingleMessage = async (channelId: string, messageId: string, payload: Omit<ChatMessage, 'id'>) => {
+    await setDoc(doc(db, 'channels', channelId, 'messages', messageId), {
+      ...payload,
+      id: messageId,
+    });
   };
 
   const markLocalMessageFailed = (messageId: string, errorMessage: string) => {
@@ -610,7 +615,7 @@ export default function ChatPage() {
       const lastMessage = isImage ? 'Đã gửi ảnh' : content;
 
       await withTimeout(
-        sendSingleMessage(localMessage.channelId, {
+        sendSingleMessage(localMessage.channelId, localMessage.id, {
           channelId: localMessage.channelId,
           senderId: currentUser.uid,
           senderName: ADMIN_LABEL,
