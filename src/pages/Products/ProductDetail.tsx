@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { collection, doc, getDoc, getDocs, limit, query, updateDoc, addDoc, where, orderBy } from 'firebase/firestore';
+import { collection, doc, getDoc, getDocs, limit, query, where, orderBy, runTransaction } from 'firebase/firestore';
 import { db } from '../../firebase';
 import {
   Save, ImageIcon, Box, ChevronLeft, ChevronRight,
@@ -241,6 +241,7 @@ export default function ProductDetail() {
     const name = formData.name?.trim(); const sku = formData.sku?.trim().toUpperCase();
     if (!name) { toast.error('❌ Tên sản phẩm không được để trống!'); return; }
     if (!sku) { toast.error('❌ Mã SKU không được để trống!'); return; }
+    if (/\s|\/|\\/.test(sku)) { toast.error('❌ Mã SKU không được chứa khoảng trắng, / hoặc \\.'); return; }
     
     setIsSaving(true);
     try {
@@ -258,19 +259,45 @@ export default function ProductDetail() {
         updatedAt: Date.now(),
       };
       const { imagesInput, ...payload } = cleanData;
-      
-      if (isCreateMode) {
-        const duplicateSkuQuery = query(collection(db, 'products'), where('sku', '==', cleanData.sku), limit(1));
-        const duplicateSkuSnap = await getDocs(duplicateSkuQuery);
-        if (!duplicateSkuSnap.empty) { toast.error(`❌ Mã SKU "${cleanData.sku}" đã tồn tại!`); setIsSaving(false); return; }
-        const newDocRef = await addDoc(collection(db, 'products'), { ...payload, id: '', rating: 0, createdAt: Date.now() });
-        await updateDoc(newDocRef, { id: newDocRef.id });
-        toast.success('✅ Tạo sản phẩm mới thành công!');
-      } else {
-        await updateDoc(doc(db, 'products', id || ''), { ...payload, id: productId });
-        toast.success('✅ Cập nhật thành công!');
-      }
+
+      const duplicateSkuQuery = query(collection(db, 'products'), where('sku', '==', cleanData.sku), limit(5));
+      const duplicateSkuSnap = await getDocs(duplicateSkuQuery);
+      const currentDocId = isCreateMode ? productId : id || productId;
+      const hasDuplicateSku = duplicateSkuSnap.docs.some((item) => item.id !== currentDocId);
+      if (hasDuplicateSku) { toast.error(`Mã SKU "${cleanData.sku}" đã tồn tại!`); setIsSaving(false); return; }
+
+      await runTransaction(db, async (transaction) => {
+        const targetProductRef = doc(db, 'products', currentDocId);
+        const skuRef = doc(db, 'product_skus', cleanData.sku);
+        const skuSnap = await transaction.get(skuRef);
+
+        if (isCreateMode) {
+          const productSnap = await transaction.get(targetProductRef);
+          if (productSnap.exists() || skuSnap.exists()) throw new Error(`Mã SKU "${cleanData.sku}" đã tồn tại!`);
+          transaction.set(targetProductRef, { ...payload, id: productId, rating: 0, createdAt: Date.now() });
+          transaction.set(skuRef, { sku: cleanData.sku, productId, createdAt: Date.now(), updatedAt: Date.now() });
+          return;
+        }
+
+        const productSnap = await transaction.get(targetProductRef);
+        if (!productSnap.exists()) throw new Error('Sản phẩm không tồn tại.');
+        const lockedProductId = skuSnap.exists() ? String(skuSnap.data().productId || '') : '';
+        if (lockedProductId && lockedProductId !== targetProductRef.id) throw new Error(`Mã SKU "${cleanData.sku}" đã tồn tại!`);
+
+        const oldSku = String(productSnap.data().sku || '').trim().toUpperCase();
+        if (oldSku && oldSku !== cleanData.sku) transaction.delete(doc(db, 'product_skus', oldSku));
+        transaction.update(targetProductRef, { ...payload, id: targetProductRef.id });
+        transaction.set(skuRef, {
+          sku: cleanData.sku,
+          productId: targetProductRef.id,
+          createdAt: skuSnap.exists() ? skuSnap.data().createdAt || Date.now() : Date.now(),
+          updatedAt: Date.now(),
+        });
+      });
+
+      toast.success(isCreateMode ? 'Tạo sản phẩm mới thành công!' : 'Cập nhật thành công!');
       goToProducts();
+      return;
     } catch (err: any) { toast.error(`❌ Lỗi khi lưu: ${err.message}`); } finally { setIsSaving(false); }
   };
 

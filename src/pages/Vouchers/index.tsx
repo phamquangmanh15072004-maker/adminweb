@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, useRef } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   collection,
   onSnapshot,
@@ -113,7 +113,7 @@ const normalizeNumberInput = (value: string) => {
 const formatNumberInput = (value: string) => {
   const digits = normalizeNumberInput(value);
   if (!digits) return '';
-  return digits.replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+  return new Intl.NumberFormat('vi-VN').format(Number(digits));
 };
 
 const parseNumberInput = (value: string) => Number(normalizeNumberInput(value) || 0);
@@ -127,34 +127,15 @@ function FormattedNumberInput({
   onChange: (value: string) => void;
   className: string;
 }) {
-  const inputRef = useRef<HTMLInputElement>(null);
-  const shouldMoveCaretToEndRef = useRef(false);
   const normalizedValue = normalizeNumberInput(value);
   const displayValue = formatNumberInput(normalizedValue);
 
-  useEffect(() => {
-    if (!shouldMoveCaretToEndRef.current) return;
-    const input = inputRef.current;
-    if (!input || document.activeElement !== input) {
-      shouldMoveCaretToEndRef.current = false;
-      return;
-    }
-    const endPosition = input.value.length;
-    input.setSelectionRange(endPosition, endPosition);
-    shouldMoveCaretToEndRef.current = false;
-  }, [displayValue]);
-
   return (
     <input
-      ref={inputRef}
       type="text"
       inputMode="numeric"
       value={displayValue}
-      onFocus={() => {
-        shouldMoveCaretToEndRef.current = true;
-      }}
       onChange={(event) => {
-        shouldMoveCaretToEndRef.current = true;
         onChange(normalizeNumberInput(event.currentTarget.value));
       }}
       className={className}

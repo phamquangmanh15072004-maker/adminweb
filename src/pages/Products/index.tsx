@@ -140,7 +140,10 @@ export default function ProductsPage() {
           ['ADMIN'],
           { type: 'INVENTORY', targetId: id, productId: id }
         );
+        const productToDelete = products.find((product) => product.id === id);
+        const sku = String(productToDelete?.sku || id).trim().toUpperCase();
         await deleteDoc(doc(db, "products", id));
+        if (sku) await deleteDoc(doc(db, "product_skus", sku));
         toast.success(`Đã xóa: ${name.substring(0, 15)}...`);
       } catch (err) { toast.error("Không thể xóa!"); } 
       finally { setDeletingId(null); }
@@ -291,8 +294,14 @@ export default function ProductsPage() {
               };
 
               const docRef = doc(db, "products", sku);
+              const skuRef = doc(db, "product_skus", sku);
 
               batch.set(docRef, productData, { merge: true }); 
+              batch.set(skuRef, {
+                sku,
+                productId: sku,
+                updatedAt: Date.now(),
+              }, { merge: true });
               successCount++;
 
               if (stockToAdd <= 5) {
