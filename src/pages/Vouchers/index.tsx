@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useState, useRef } from 'react';
+import { useEffect, useMemo, useState, useRef } from 'react';
 import {
   collection,
   onSnapshot,
@@ -118,20 +118,6 @@ const formatNumberInput = (value: string) => {
 
 const parseNumberInput = (value: string) => Number(normalizeNumberInput(value) || 0);
 
-const findCaretPositionByDigitCount = (formattedValue: string, digitCount: number) => {
-  if (digitCount <= 0) return 0;
-  let seenDigits = 0;
-  for (let index = 0; index < formattedValue.length; index += 1) {
-    if (/\d/.test(formattedValue[index])) {
-      seenDigits += 1;
-    }
-    if (seenDigits >= digitCount) {
-      return index + 1;
-    }
-  }
-  return formattedValue.length;
-};
-
 function FormattedNumberInput({
   value,
   onChange,
@@ -141,36 +127,18 @@ function FormattedNumberInput({
   onChange: (value: string) => void;
   className: string;
 }) {
-  const inputRef = useRef<HTMLInputElement>(null);
-  const nextCaretPosition = useRef<number | null>(null);
-  const displayValue = formatNumberInput(value);
-
-  useLayoutEffect(() => {
-    if (nextCaretPosition.current === null) return;
-    const input = inputRef.current;
-    if (!input || document.activeElement !== input) {
-      nextCaretPosition.current = null;
-      return;
-    }
-    const caret = Math.min(nextCaretPosition.current, input.value.length);
-    input.setSelectionRange(caret, caret);
-    nextCaretPosition.current = null;
-  }, [displayValue]);
+  const [isFocused, setIsFocused] = useState(false);
+  const normalizedValue = normalizeNumberInput(value);
+  const displayValue = isFocused ? normalizedValue : formatNumberInput(normalizedValue);
 
   return (
     <input
-      ref={inputRef}
       type="text"
       inputMode="numeric"
       value={displayValue}
-      onChange={(event) => {
-        const rawDisplayValue = event.currentTarget.value;
-        const cursor = event.currentTarget.selectionStart ?? rawDisplayValue.length;
-        const digitCountBeforeCursor = rawDisplayValue.slice(0, cursor).replace(/\D/g, '').length;
-        const nextValue = normalizeNumberInput(rawDisplayValue);
-        nextCaretPosition.current = findCaretPositionByDigitCount(formatNumberInput(nextValue), digitCountBeforeCursor);
-        onChange(nextValue);
-      }}
+      onFocus={() => setIsFocused(true)}
+      onBlur={() => setIsFocused(false)}
+      onChange={(event) => onChange(normalizeNumberInput(event.currentTarget.value))}
       className={className}
     />
   );
@@ -186,7 +154,15 @@ const getStatusMeta = (voucher: VoucherRecord) => {
 };
 
 // --- COMPONENT DÙNG CHUNG CHUẨN UI ---
-const ToggleSwitch = ({ checked, onChange, label, description, colorClass = "bg-blue-600" }: any) => (
+type ToggleSwitchProps = {
+  checked: boolean;
+  onChange: (checked: boolean) => void;
+  label: string;
+  description?: string;
+  colorClass?: string;
+};
+
+const ToggleSwitch = ({ checked, onChange, label, description, colorClass = "bg-blue-600" }: ToggleSwitchProps) => (
   <label className="flex items-center justify-between cursor-pointer p-4 rounded-2xl border border-slate-200 bg-white hover:bg-slate-50 transition-colors">
     <input type="checkbox" className="sr-only" checked={checked} onChange={(e) => onChange(e.target.checked)} />
     <div className="pr-4">
@@ -252,7 +228,15 @@ function CustomFormDropdown({ value, options, onChange }: { value: string, optio
   );
 }
 
-function DeleteConfirmModal({ open, voucher, isDeleting, onCancel, onConfirm }: any) {
+type DeleteConfirmModalProps = {
+  open: boolean;
+  voucher: VoucherRecord | null;
+  isDeleting: boolean;
+  onCancel: () => void;
+  onConfirm: () => Promise<void> | void;
+};
+
+function DeleteConfirmModal({ open, voucher, isDeleting, onCancel, onConfirm }: DeleteConfirmModalProps) {
   if (!open || !voucher) return null;
   return (
     <div className="fixed inset-0 z-[80] bg-black/45 flex items-center justify-center p-4 backdrop-blur-sm animate-in fade-in duration-200">
@@ -296,7 +280,7 @@ export default function VouchersPage() {
   const [voucherToDelete, setVoucherToDelete] = useState<VoucherRecord | null>(null);
   const [isDeletingVoucher, setIsDeletingVoucher] = useState(false);
   
-  const stableNow = useMemo(() => Date.now(), [isModalOpen]); 
+  const [stableNow, setStableNow] = useState(() => Date.now()); 
 
   useEffect(() => { document.title = "Quản lý Khuyến mãi - Gunpla Store"; }, []);
 
@@ -344,12 +328,14 @@ export default function VouchersPage() {
   }, [vouchers, searchTerm, filterStatus]);
 
   const openCreateModal = () => {
+    setStableNow(Date.now());
     setEditingVoucher(null);
     setFormState({ ...initialFormState, isScheduled: false });
     setIsModalOpen(true);
   };
 
   const openEditModal = (voucher: VoucherRecord) => {
+    setStableNow(Date.now());
     setEditingVoucher(voucher);
     const isScheduled = voucher.startDate > Date.now();
     setFormState({
@@ -443,10 +429,10 @@ export default function VouchersPage() {
         toast.success('✅ Tạo voucher mới thành công.');
       }
       closeModal();
-    } catch (error: any) { 
+    } catch (error: unknown) { 
       console.error(error); 
       // 🌟 TRANSLATE FIREBASE ERRORS SANG TIẾNG VIỆT
-      const msg = error?.message || '';
+      const msg = error instanceof Error ? error.message : '';
       if (msg.includes('permission-denied')) {
         toast.error('⛔ Lỗi bảo mật: Bạn không có quyền ghi dữ liệu.');
       } else if (msg.includes('unavailable') || msg.includes('network')) {
@@ -463,7 +449,7 @@ export default function VouchersPage() {
     try {
       await updateDoc(doc(db, 'vouchers', voucher.id), { isActive: !voucher.isActive });
       toast.success(voucher.isActive ? '🔒 Đã vô hiệu hóa voucher.' : '🔓 Đã kích hoạt lại voucher.');
-    } catch (error) { toast.error('❌ Lỗi hệ thống: Không thể cập nhật trạng thái.'); }
+    } catch { toast.error('❌ Lỗi hệ thống: Không thể cập nhật trạng thái.'); }
   };
 
   const handleOpenDeleteModal = (voucher: VoucherRecord) => {
@@ -483,7 +469,7 @@ export default function VouchersPage() {
       await deleteDoc(doc(db, 'vouchers', voucherToDelete.id));
       toast.success('🗑️ Đã xóa Voucher thành công');
       setDeleteModalOpen(false); setVoucherToDelete(null);
-    } catch (error) { toast.error('❌ Lỗi hệ thống: Không thể xóa voucher lúc này.'); } 
+    } catch { toast.error('❌ Lỗi hệ thống: Không thể xóa voucher lúc này.'); } 
     finally { setIsDeletingVoucher(false); }
   };
 
