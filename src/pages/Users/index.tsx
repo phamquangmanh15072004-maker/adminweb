@@ -24,6 +24,8 @@ import {
 import { auth, db } from '../../firebase';
 import toast from 'react-hot-toast';
 import { useNavigate } from 'react-router-dom';
+import { useAuth } from '../../hooks/useAuth';
+import { canManageUsers } from '../../utils/permissions';
 
 // ============================================================================
 // 📅 HELPER: Format Last Active (Có hiệu ứng Đang hoạt động)
@@ -222,7 +224,8 @@ export default function UsersPage() {
   const [sortField, setSortField] = useState<SortField>('lastActive');
   const [sortOrder, setSortOrder] = useState<SortOrder>('desc');
   const [isLoading, setIsLoading] = useState(true);
-  const [isSuperAdmin, setIsSuperAdmin] = useState(false);
+  const { currentUser } = useAuth();
+  const isSuperAdmin = canManageUsers(currentUser?.role);
   const [selectedUser, setSelectedUser] = useState<UserRecord | null>(null);
   const [dialogType, setDialogType] = useState<'lock' | 'unlock' | 'changeRole' | null>(null);
   const [lockReason, setLockReason] = useState('');
@@ -247,13 +250,6 @@ export default function UsersPage() {
 
   useEffect(() => {
     document.title = "Quản lý Người Dùng - Gunpla Store";
-  }, []);
-
-  useEffect(() => {
-    const unsubscribe = auth.onAuthStateChanged((user) => {
-      if (user) setIsSuperAdmin(user.email === 'admin@storepromax.com');
-    });
-    return unsubscribe;
   }, []);
 
   // 💓 WEB HEARTBEAT: Máy đo nhịp tim cho Admin trên Web
@@ -559,7 +555,7 @@ export default function UsersPage() {
                           }} 
                           disabled={!isSuperAdmin} 
                           className={`inline-flex items-center justify-between gap-2 w-[140px] px-3 py-1.5 text-xs font-bold rounded-lg border transition ${isSuperAdmin ? `${getRoleSoftClass(user.role)} hover:brightness-[0.98] cursor-pointer` : 'bg-amber-50 text-amber-500 border-amber-200 opacity-50 cursor-not-allowed'}`}
-                          title={isSuperAdmin ? 'Đổi quyền' : 'Chỉ Super Admin mới có quyền'}
+                          title={isSuperAdmin ? 'Đổi quyền' : 'Chỉ Admin mới có quyền'}
                         >
                           <span className="inline-flex items-center justify-center min-w-[94px] tracking-wide">{user.role}</span>
                           <ChevronDown size={14} className={`transition-transform ${roleMenuOpenUserId === user.id ? 'rotate-180' : ''}`} />
@@ -570,7 +566,7 @@ export default function UsersPage() {
                           onClick={() => handleOpenDialog(user, user.isLocked ? 'unlock' : 'lock')} 
                           disabled={!isSuperAdmin} 
                           className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-lg transition ${isSuperAdmin ? (user.isLocked ? 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200 cursor-pointer' : 'bg-red-100 text-red-700 hover:bg-red-200 cursor-pointer') : ('opacity-50 cursor-not-allowed ' + (user.isLocked ? 'bg-emerald-50 text-emerald-500' : 'bg-red-50 text-red-500'))}`}
-                          title={isSuperAdmin ? (user.isLocked ? 'Mở khóa' : 'Khóa') : 'Chỉ Super Admin mới có quyền'}
+                          title={isSuperAdmin ? (user.isLocked ? 'Mở khóa' : 'Khóa') : 'Chỉ Admin mới có quyền'}
                         >
                           {user.isLocked ? (<><Unlock size={14} /> Unlock</>) : (<><Lock size={14} /> Lock</>)}
                         </button>

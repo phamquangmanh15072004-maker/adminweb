@@ -18,6 +18,8 @@ import BannerManagerModal from './pages/Banner/index';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { doc, getDoc, onSnapshot } from 'firebase/firestore';
 import { auth, db } from './firebase'; 
+import { useAuth } from './hooks/useAuth';
+import { canAccessPath, canManageBanners, isInternalRole, normalizeRole } from './utils/permissions';
 
 // Lazy load các trang
 const ProductDetail = lazy(() => import('./pages/Products/ProductDetail'));
@@ -55,8 +57,7 @@ const ProtectedRoute = ({ children }: { children: ReactElement }) => {
             }
 
             const userData = userSnapshot.data();
-            const allowedRoles = ['ADMIN', 'INVENTORY', 'STAFF'];
-            const normalizedRole = String(userData.role || '').toUpperCase();
+            const normalizedRole = normalizeRole(String(userData.role || ''));
             const currentForceLogoutAt = Number(userData.forceLogoutAt || 0);
 
             if (currentForceLogoutAt > sessionForceLogoutAt) {
@@ -70,7 +71,7 @@ const ProtectedRoute = ({ children }: { children: ReactElement }) => {
               return;
             }
 
-            if (allowedRoles.includes(normalizedRole) && !userData.isLocked) {
+            if (isInternalRole(normalizedRole) && !userData.isLocked) {
               setIsAuthorized(true);
             } else {
               setIsAuthorized(false);
@@ -94,7 +95,7 @@ const ProtectedRoute = ({ children }: { children: ReactElement }) => {
       unsubscribeAuth();
       if (unsubscribeUserDoc) unsubscribeUserDoc();
     };
-  }, []);
+  }, [hasShownForceLogoutToast]);
 
   if (isChecking) {
     return (
@@ -112,6 +113,25 @@ const ProtectedRoute = ({ children }: { children: ReactElement }) => {
   return children;
 };
 
+const PageAccessGuard = ({ path, children }: { path: string; children: ReactElement }) => {
+  const { currentUser } = useAuth();
+
+  if (!currentUser) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center bg-slate-950">
+        <div className="w-10 h-10 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mb-4" />
+        <p className="text-blue-400 font-bold tracking-widest uppercase text-xs animate-pulse">Đang tải quyền truy cập...</p>
+      </div>
+    );
+  }
+
+  if (!canAccessPath(path, currentUser.role)) {
+    return <Navigate to="/dashboard" replace />;
+  }
+
+  return children;
+};
+
 type ModuleCard = {
   title: string;
   subtitle: string;
@@ -124,6 +144,13 @@ type RecentModule = {
   path: string;
   title: string;
   visitedAt: number;
+};
+
+type DashboardProduct = {
+  isActive?: boolean;
+  has3D?: boolean;
+  model3DUrl?: string | null;
+  stock?: number | string | null;
 };
 
 const RECENT_MODULES_KEY = 'admin_recent_modules';
@@ -200,13 +227,13 @@ const moduleCards: ModuleCard[] = [
   }
 ];
 
-function DashboardHub() {
+function DashboardHub({ currentUserRole }: { currentUserRole: string }) {
   const navigate = useNavigate();
-  const [products, setProducts] = useState<any[]>([]);
+  const [products, setProducts] = useState<DashboardProduct[]>([]);
   const [recentModules, setRecentModules] = useState<RecentModule[]>([]);
   const [isBannerModalOpen, setIsBannerModalOpen] = useState(false);
   useEffect(() => {
-    const unsubscribe = subscribeProducts((data) => setProducts(data));
+    const unsubscribe = subscribeProducts((data) => setProducts(data as DashboardProduct[]));
     return () => unsubscribe();
   }, []);
 
@@ -231,20 +258,31 @@ function DashboardHub() {
     return { total, active, has3D, lowStock };
   }, [products]);
 
-  const rememberModule = (path: string) => {
+  const rememberModule = (path: string, visitedAt: number) => {
     const title = moduleTitleByPath[path];
     if (!title) return;
 
-    const nextItem: RecentModule = { path, title, visitedAt: Date.now() };
+    const nextItem: RecentModule = { path, title, visitedAt };
     const merged = [nextItem, ...recentModules.filter((item) => item.path !== path)].slice(0, 4);
     setRecentModules(merged);
     localStorage.setItem(RECENT_MODULES_KEY, JSON.stringify(merged));
   };
 
   const handleGoModule = (path: string) => {
-    rememberModule(path);
+    // eslint-disable-next-line react-hooks/purity
+    rememberModule(path, Date.now());
     navigate(path);
   };
+
+  const availableModuleCards = useMemo(
+    () => moduleCards.filter((item) => canAccessPath(item.path, currentUserRole)),
+    [currentUserRole]
+  );
+  const availableRecentModules = useMemo(
+    () => recentModules.filter((item) => canAccessPath(item.path, currentUserRole)),
+    [recentModules, currentUserRole]
+  );
+  const canSeeProductStats = canAccessPath('/products', currentUserRole);
 
   return (
     <div className="h-full overflow-y-auto custom-scrollbar p-4 sm:p-6 lg:p-8 bg-[radial-gradient(circle_at_top,_rgba(37,99,235,0.12),_transparent_38%),linear-gradient(180deg,#f8fafc_0%,#eef2ff_100%)]">
@@ -260,17 +298,19 @@ function DashboardHub() {
             </p>
           </div>
 
-          {/* NÚT BẤM GỌI MODAL BÊN PHẢI */}
-          <button
-            onClick={() => setIsBannerModalOpen(true)}
-            className="group flex items-center gap-2.5 px-5 py-3 bg-slate-900 hover:bg-blue-600 text-white rounded-2xl font-bold text-sm transition-all duration-300 shadow-[0_10px_20px_rgba(15,23,42,0.15)] hover:shadow-[0_10px_25px_rgba(37,99,235,0.3)] hover:-translate-y-0.5 shrink-0"
-          >
-            <MonitorPlay className="w-5 h-5 text-blue-400 group-hover:text-white transition-colors" />
-            <span>Cập nhật Banner App</span>
-          </button>
+          {canManageBanners(currentUserRole) && (
+            <button
+              onClick={() => setIsBannerModalOpen(true)}
+              className="group flex items-center gap-2.5 px-5 py-3 bg-slate-900 hover:bg-blue-600 text-white rounded-2xl font-bold text-sm transition-all duration-300 shadow-[0_10px_20px_rgba(15,23,42,0.15)] hover:shadow-[0_10px_25px_rgba(37,99,235,0.3)] hover:-translate-y-0.5 shrink-0"
+            >
+              <MonitorPlay className="w-5 h-5 text-blue-400 group-hover:text-white transition-colors" />
+              <span>Cập nhật Banner App</span>
+            </button>
+          )}
           
         </section>
 
+        {canSeeProductStats && (
         <section className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
           <div className="rounded-2xl border border-slate-200 bg-white px-4 py-4 shadow-sm">
             <p className="text-[11px] uppercase tracking-widest text-slate-400 font-bold">Tổng sản phẩm</p>
@@ -289,9 +329,10 @@ function DashboardHub() {
             <p className="mt-2 text-2xl font-black text-amber-600">{stats.lowStock}</p>
           </div>
         </section>
+        )}
 
         <section className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-5">
-          {moduleCards.map((item, index) => (
+          {availableModuleCards.map((item, index) => (
             <button
               key={item.path}
               type="button"
@@ -316,11 +357,11 @@ function DashboardHub() {
             <h3 className="text-base sm:text-lg font-black text-slate-900">Truy cập gần đây</h3>
             <span className="text-[11px] uppercase tracking-widest text-slate-400 font-bold">Quick Resume</span>
           </div>
-          {recentModules.length === 0 ? (
+          {availableRecentModules.length === 0 ? (
             <p className="mt-3 text-sm text-slate-500">Bạn chưa truy cập module nào gần đây. Hãy chọn một card ở trên để bắt đầu.</p>
           ) : (
             <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-3">
-              {recentModules.map((item) => (
+              {availableRecentModules.map((item) => (
                 <button
                   key={`${item.path}-${item.visitedAt}`}
                   type="button"
@@ -335,11 +376,12 @@ function DashboardHub() {
           )}
         </section>
       </div>
-      {/* 🌟 THÊM ĐÚNG 4 DÒNG NÀY VÀO ĐÂY */}
-      <BannerManagerModal 
-        isOpen={isBannerModalOpen} 
-        onClose={() => setIsBannerModalOpen(false)} 
-      />
+      {canManageBanners(currentUserRole) && (
+        <BannerManagerModal 
+          isOpen={isBannerModalOpen} 
+          onClose={() => setIsBannerModalOpen(false)} 
+        />
+      )}
     </div>
   );
 }
@@ -363,7 +405,7 @@ function AdminLayout() {
     STAFF: { label: 'Nhân viên CSKH', className: 'text-cyan-600' },
   };
 
-  const normalizedRole = String(currentUser?.role || '').toUpperCase();
+  const normalizedRole = normalizeRole(currentUser?.role);
   const roleMeta =
     roleMetaByRole[normalizedRole] ||
     ({ label: 'Tài khoản nội bộ', className: 'text-slate-500' } as const);
@@ -382,7 +424,7 @@ function AdminLayout() {
         setCurrentUser({
           id: user.uid,
           name: String(data.name || user.displayName || 'Tài khoản quản trị'),
-          role: String(data.role || '').toUpperCase(),
+          role: normalizeRole(String(data.role || '')),
           avatarUrl: String(data.avatarUrl || '').trim() || undefined,
         });
       } catch (error) {
@@ -422,7 +464,7 @@ function AdminLayout() {
     try {
       await signOut(auth);
       toast.success("Đã đăng xuất an toàn!");
-    } catch (error) {
+    } catch {
       toast.error("Lỗi đăng xuất!");
     }
   };
@@ -468,6 +510,15 @@ function AdminLayout() {
       navigate('/dashboard', { replace: true });
     }
   };
+
+  if (!currentUser) {
+    return (
+      <div className="h-screen flex flex-col items-center justify-center bg-slate-950">
+        <div className="w-10 h-10 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mb-4" />
+        <p className="text-blue-400 font-bold tracking-widest uppercase text-xs animate-pulse">Đang tải tài khoản...</p>
+      </div>
+    );
+  }
 
   return (
     <div className="h-screen bg-transparent font-sans text-gray-900 overflow-hidden">
@@ -520,20 +571,20 @@ function AdminLayout() {
         <div className="flex-1 min-h-0 relative">
            <Routes>
               <Route path="/" element={<Navigate to="/dashboard" replace />} />
-              <Route path="/dashboard" element={<DashboardHub />} />
-              <Route path="/stats" element={<div className="h-full min-h-0 overflow-y-auto custom-scrollbar"><DashboardPage /></div>} />
-              <Route path="/products" element={<div className="h-full min-h-0 overflow-y-auto custom-scrollbar"><ProductsPage /></div>} />
-              <Route path="/orders" element={<div className="h-full min-h-0 overflow-y-auto custom-scrollbar"><OrdersPage /></div>} />
-              <Route path="/chat" element={<div className="h-full min-h-0 overflow-hidden"><ChatPage /></div>} />
-              <Route path="/users" element={<div className="h-full min-h-0 overflow-y-auto custom-scrollbar"><UsersPage /></div>} />
-              <Route path="/notifications" element={<div className="h-full min-h-0 overflow-y-auto custom-scrollbar"><NotificationsPage /></div>} />
-              <Route path="/posts" element={<div className="h-full min-h-0 overflow-y-auto custom-scrollbar"><PostsPage /></div>} />
-              <Route path="/vouchers" element={<div className="h-full min-h-0 overflow-y-auto custom-scrollbar"><VouchersPage /></div>} />
+              <Route path="/dashboard" element={<DashboardHub currentUserRole={normalizedRole} />} />
+              <Route path="/stats" element={<PageAccessGuard path="/stats"><div className="h-full min-h-0 overflow-y-auto custom-scrollbar"><DashboardPage /></div></PageAccessGuard>} />
+              <Route path="/products" element={<PageAccessGuard path="/products"><div className="h-full min-h-0 overflow-y-auto custom-scrollbar"><ProductsPage /></div></PageAccessGuard>} />
+              <Route path="/orders" element={<PageAccessGuard path="/orders"><div className="h-full min-h-0 overflow-y-auto custom-scrollbar"><OrdersPage /></div></PageAccessGuard>} />
+              <Route path="/chat" element={<PageAccessGuard path="/chat"><div className="h-full min-h-0 overflow-hidden"><ChatPage /></div></PageAccessGuard>} />
+              <Route path="/users" element={<PageAccessGuard path="/users"><div className="h-full min-h-0 overflow-y-auto custom-scrollbar"><UsersPage /></div></PageAccessGuard>} />
+              <Route path="/notifications" element={<PageAccessGuard path="/notifications"><div className="h-full min-h-0 overflow-y-auto custom-scrollbar"><NotificationsPage /></div></PageAccessGuard>} />
+              <Route path="/posts" element={<PageAccessGuard path="/posts"><div className="h-full min-h-0 overflow-y-auto custom-scrollbar"><PostsPage /></div></PageAccessGuard>} />
+              <Route path="/vouchers" element={<PageAccessGuard path="/vouchers"><div className="h-full min-h-0 overflow-y-auto custom-scrollbar"><VouchersPage /></div></PageAccessGuard>} />
               
               {/* 🌟 ROUTE QUẢN LÝ ĐÁNH GIÁ MỚI */}
-              <Route path="/reviews" element={<div className="h-full min-h-0 overflow-y-auto custom-scrollbar"><ReviewsPage /></div>} />
+              <Route path="/reviews" element={<PageAccessGuard path="/reviews"><div className="h-full min-h-0 overflow-y-auto custom-scrollbar"><ReviewsPage /></div></PageAccessGuard>} />
               
-              <Route path="/customers" element={<UnderConstruction title="Khách hàng" />} />
+              <Route path="/customers" element={<PageAccessGuard path="/users"><UnderConstruction title="Khách hàng" /></PageAccessGuard>} />
            </Routes>
         </div>
       </main>
@@ -564,8 +615,8 @@ export default function App() {
       <Suspense fallback={<div className="min-h-screen bg-slate-950 flex items-center justify-center text-blue-500 font-bold uppercase tracking-widest text-xs animate-pulse">Đang tải hệ thống...</div>}>
         <Routes>
           <Route path="/login" element={<Login />} />
-          <Route path="/products/new" element={ <ProtectedRoute><ProductDetail /></ProtectedRoute> } />
-          <Route path="/products/:id" element={ <ProtectedRoute><ProductDetail /></ProtectedRoute> } />
+          <Route path="/products/new" element={ <ProtectedRoute><PageAccessGuard path="/products"><ProductDetail /></PageAccessGuard></ProtectedRoute> } />
+          <Route path="/products/:id" element={ <ProtectedRoute><PageAccessGuard path="/products"><ProductDetail /></PageAccessGuard></ProtectedRoute> } />
           <Route path="/*" element={ <ProtectedRoute><AdminLayout /></ProtectedRoute> } />
         </Routes>
       </Suspense>

@@ -1,13 +1,15 @@
 import { LayoutDashboard, ShoppingCart, Package, Users, Settings, LogOut, MessageCircle, TicketPercent, FileText } from 'lucide-react';
 import { NavLink } from 'react-router-dom';
+import { canAccessPath } from '../utils/permissions';
 
 type SidebarProps = {
   activeTab: string;
   collapsed?: boolean;
   onToggleCollapse?: () => void;
+  currentUserRole?: string;
 };
 
-export default function Sidebar({ activeTab, collapsed = false, onToggleCollapse }: SidebarProps) {
+export default function Sidebar({ activeTab, collapsed = false, onToggleCollapse, currentUserRole = '' }: SidebarProps) {
   const menuItems = [
     { id: 'dashboard', label: 'Tổng quan', icon: LayoutDashboard, to: '/dashboard' },
     { id: 'orders', label: 'Đơn hàng', icon: ShoppingCart, to: '/orders' },
@@ -18,7 +20,7 @@ export default function Sidebar({ activeTab, collapsed = false, onToggleCollapse
     { id: 'products', label: 'Sản phẩm', icon: Package, to: '/products' },
     { id: 'customers', label: 'Khách hàng', icon: Users, to: '/customers' },
     { id: 'settings', label: 'Cài đặt', icon: Settings, to: '/settings' },
-  ];
+  ].filter((item) => canAccessPath(item.to, currentUserRole));
 
   return (
     <aside className={`bg-slate-950 text-white flex flex-col shadow-[0_20px_60px_rgba(15,23,42,0.35)] z-10 h-full border-r border-white/10 transition-all duration-300 ${collapsed ? 'w-20' : 'w-72'}`}>

@@ -14,7 +14,9 @@ import {
 import { AlertCircle, AlertTriangle, Edit3, Loader2, Plus, Search, ShieldOff, TicketPercent, Trash2, Filter, ChevronDown, CalendarClock, EyeOff } from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
 import toast from 'react-hot-toast';
-import { auth, db } from '../../firebase';
+import { db } from '../../firebase';
+import { useAuth } from '../../hooks/useAuth';
+import { canManageVouchers } from '../../utils/permissions';
 
 type VoucherType = 'DISCOUNT' | 'FREESHIP';
 type DiscountType = 'FIXED' | 'PERCENT';
@@ -209,7 +211,8 @@ function DeleteConfirmModal({ open, voucher, isDeleting, onCancel, onConfirm }: 
 export default function VouchersPage() {
   const [vouchers, setVouchers] = useState<VoucherRecord[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [isSuperAdmin, setIsSuperAdmin] = useState(false);
+  const { currentUser } = useAuth();
+  const isSuperAdmin = canManageVouchers(currentUser?.role);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterStatus, setFilterStatus] = useState<FilterStatus>('ALL');
   
@@ -232,11 +235,6 @@ export default function VouchersPage() {
     document.body.style.overflow = 'hidden';
     return () => { document.body.style.overflow = 'unset'; };
   }, [isModalOpen]);
-
-  useEffect(() => {
-    const unsubscribe = auth.onAuthStateChanged((user) => { setIsSuperAdmin(user?.email === 'admin@storepromax.com'); });
-    return unsubscribe;
-  }, []);
 
   useEffect(() => {
     setIsLoading(true);
@@ -317,7 +315,7 @@ export default function VouchersPage() {
 
   const handleSubmitVoucher = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!isSuperAdmin) { toast.error('⛔ Lỗi phân quyền: Chỉ Super Admin mới có quyền thao tác.'); return; }
+    if (!isSuperAdmin) { toast.error('⛔ Lỗi phân quyền: Chỉ Admin mới có quyền thao tác.'); return; }
 
     const code = formState.code.trim().toUpperCase();
     const title = formState.title.trim();
@@ -388,7 +386,7 @@ export default function VouchersPage() {
   };
 
   const handleToggleActive = async (voucher: VoucherRecord) => {
-    if (!isSuperAdmin) { toast.error('⛔ Chỉ Super Admin mới có quyền thao tác.'); return; }
+    if (!isSuperAdmin) { toast.error('⛔ Chỉ Admin mới có quyền thao tác.'); return; }
     try {
       await updateDoc(doc(db, 'vouchers', voucher.id), { isActive: !voucher.isActive });
       toast.success(voucher.isActive ? '🔒 Đã vô hiệu hóa voucher.' : '🔓 Đã kích hoạt lại voucher.');
@@ -396,7 +394,7 @@ export default function VouchersPage() {
   };
 
   const handleOpenDeleteModal = (voucher: VoucherRecord) => {
-    if (!isSuperAdmin) { toast.error('⛔ Chỉ Super Admin mới có quyền xóa.'); return; }
+    if (!isSuperAdmin) { toast.error('⛔ Chỉ Admin mới có quyền xóa.'); return; }
     setVoucherToDelete(voucher); setDeleteModalOpen(true);
   };
 
