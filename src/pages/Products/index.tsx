@@ -156,7 +156,11 @@ export default function ProductsPage() {
     setIsProcessing(true);
     try {
       const batch = writeBatch(db);
-      products.forEach(p => batch.delete(doc(db, "products", p.id)));
+      products.forEach(p => {
+        batch.delete(doc(db, "products", p.id));
+        const sku = String(p.sku || p.id || '').trim().toUpperCase();
+        if (sku) batch.delete(doc(db, "product_skus", sku));
+      });
       await batch.commit();
       setClearAllDialog(false);
       setClearConfirmText("");
@@ -196,9 +200,7 @@ export default function ProductsPage() {
       price: p.price,
       originalPrice: p.originalPrice,
       costPrice: p.costPrice,
-      stock: p.stock,
-      sold: p.sold, // Chỉ xuất cho sếp xem, nhập vào không ghi đè
-      weight: p.weight,
+      stock: p.stock,      weight: p.weight,
       imagesInput: Array.isArray(p.images) ? p.images.join(',') : '', 
       model3DUrl: p.model3DUrl || '',
       description: p.description || '',
@@ -254,7 +256,9 @@ export default function ProductsPage() {
 
             const parseNumber = (val: any, fieldName: string) => {
               if (val === '' || val === null || val === undefined) return 0;
-              const num = Number(val);
+              const raw = String(val).trim();
+              const normalized = raw.replace(/[^\d-]/g, '');
+              const num = Number(normalized || 0);
               if (isNaN(num) || num < 0) {
                 throw new Error(`Dòng ${lineNum}: SKU [${sku}] có ${fieldName} không hợp lệ ("${val}").`);
               }
@@ -270,7 +274,7 @@ export default function ProductsPage() {
               const weight = parseNumber(row.weight, 'Cân nặng');
 
               // Xử lý Ảnh
-              const imagesArray = row.imagesInput ? String(row.imagesInput).split(',').map(u => u.trim()).filter(Boolean) : [];
+              const imagesArray = row.imagesInput ? String(row.imagesInput).split(/[\n,;]+/).map(u => u.trim()).filter(Boolean) : [];
               const mainImageUrl = imagesArray.length > 0 ? imagesArray[0] : '';
 
               const productData = {
@@ -313,8 +317,8 @@ export default function ProductsPage() {
             }
           });
 
-          if (successCount > 500) {
-            toast.error("Vui lòng chia nhỏ file CSV (tối đa 500 dòng/lần)");
+          if (successCount > 250) {
+            toast.error("Vui lòng chia nhỏ file CSV (tối đa 250 dòng/lần)");
             setIsImporting(false); return;
           }
 
@@ -622,7 +626,7 @@ export default function ProductsPage() {
                          <>
                            <Upload className="w-12 h-12 text-slate-400 mb-4" />
                            <p className="text-sm font-bold text-slate-900">2. Kéo thả file CSV vào đây hoặc click để chọn</p>
-                           <p className="text-xs font-medium text-slate-500 mt-2">Hỗ trợ tối đa 500 sản phẩm / 1 lần tải lên.</p>
+                           <p className="text-xs font-medium text-slate-500 mt-2">Hỗ trợ tối đa 250 sản phẩm / 1 lần tải lên.</p>
                          </>
                       )}
                     </div>
